@@ -1,0 +1,115 @@
+# IoThings sensors platform
+# 3-member MongoDB replica set + MQTT broker + Node.js ingest service + REST API
+name: iothings
+
+x-mongo: &mongo
+  image: mongo:7.0
+  restart: unless-stopped
+  networks: [iot]
+  volumes:
+    - ./docker/mongo/keyfile:/keyfile-src/keyfile:ro
+    - ./mongo:/scripts:ro
+  healthcheck:
+    test: ["CMD-SHELL", "mongosh --quiet --port $${MONGO_PORT} --eval \"db.adminCommand('ping').ok\""]
+    interval: 10s
+    timeout: 5s
+    retries: 10
+
+# mongod refuses a keyfile that is readable by others, so each node copies it
+# into its own filesystem with the right owner and mode before starting.
+x-mongo-cmd: &mongo-cmd >
+  bash -c "cp /keyfile-src/keyfile /etc/mongo-keyfile &&
+  chown 999:999 /etc/mongo-keyfile && chmod 400 /etc/mongo-keyfile &&
+  exec docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all
+  --port $${MONGO_PORT} --keyFile /etc/mongo-keyfile"
+
+services:
+  mongo1:
+    <<: *mongo
+    container_name: mongo1
+    hostname: mongo1
+    environment: { MONGO_PORT: "27017" }
+    command: *mongo-cmd
+    ports: ["27017:27017"]
+    volumes:
+      - ./docker/mongo/keyfile:/keyfile-src/keyfile:ro
+      - ./mongo:/scripts:ro
+      - mongo1-data:/data/db
+
+  mongo2:
+    <<: *mongo
+    container_name: mongo2
+    hostname: mongo2
+    environment: { MONGO_PORT: "27018" }
+    command: *mongo-cmd
+    ports: ["27018:27018"]
+    volumes:
+      - ./docker/mongo/keyfile:/keyfile-src/keyfile:ro
+      - ./mongo:/scripts:ro
+      - mongo2-data:/data/db
+
+  mongo3:
+    <<: *mongo
+    container_name: mongo3
+    hostname: mongo3
+    environment: { MONGO_PORT: "27019" }
+    command: *mongo-cmd
+    ports: ["27019:27019"]
+    volumes:
+      - ./docker/mongo/keyfile:/keyfile-src/keyfile:ro
+      - ./mongo:/scripts:ro
+      - mongo3-data:/data/db
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    restart: unless-stopped
+    networks: [iot]
+    ports: ["1883:1883"]
+    volumes:
+      - ./docker/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./docker/mosquitto/passwd:/mosquitto/config/passwd:ro
+
+  ingest:
+    build: .
+    container_name: iothings-ingest
+    restart: unless-stopped
+    networks: [iot]
+    env_file: .env
+    environment:
+      MONGO_URI: ${MONGO_URI_INGEST}
+    command: ["node", "src/ingest.js"]
+    depends_on: [mosquitto]
+
+  api:
+    build: .
+    container_name: iothings-api
+    restart: unless-stopped
+    networks: [iot]
+    env_file: .env
+    environment:
+      MONGO_URI: ${MONGO_URI_API}
+    command: ["node", "src/api/server.js"]
+    volumes:
+      - ./data:/app/data
+    ports: ["${API_PORT:-4000}:4000"]
+
+  # Not started by default: `docker compose --profile sim up simulator`
+  simulator:
+    build: .
+    container_name: iothings-simulator
+    profiles: [sim]
+    networks: [iot]
+    env_file: .env
+    environment:
+      MONGO_URI: ${MONGO_URI_API}
+    command: ["node", "src/simulator.js"]
+    depends_on: [mosquitto]
+
+networks:
+  iot:
+
+volumes:
+  mongo1-data:
+  mongo2-data:
+  mongo3-data:

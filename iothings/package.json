@@ -1,0 +1,22 @@
+{
+  "name": "iothings-sensors",
+  "version": "1.0.0",
+  "description": "IoThings home automation sensors platform: MQTT ingest into a MongoDB replica set with a REST API",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "ingest": "node src/ingest.js",
+    "api": "node src/api/server.js",
+    "simulate": "node src/simulator.js",
+    "seed": "node scripts/seed.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "mongodb": "^6.12.0",
+    "mqtt": "^5.10.3",
+    "swagger-ui-express": "^5.0.1",
+    "yaml": "^2.7.0"
+  }
+}

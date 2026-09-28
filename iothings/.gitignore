@@ -1,0 +1,6 @@
+node_modules/
+.env
+docker/mongo/keyfile
+docker/mosquitto/passwd
+data/*.json
+data/*.csv

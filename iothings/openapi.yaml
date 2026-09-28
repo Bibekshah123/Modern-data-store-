@@ -1,0 +1,297 @@
+openapi: 3.0.3
+info:
+  title: IoThings Sensors API
+  version: 1.0.0
+  description: |
+    REST API for accessing and processing sensor-activation data stored in the IoThings
+    MongoDB replica set. Every `/api/v1` endpoint requires the `x-api-key` header.
+    Dates are ISO-8601; when `from`/`to` are omitted the last 7 days are used.
+servers:
+  - url: http://localhost:4000
+security:
+  - ApiKey: []
+tags:
+  - name: Homes
+  - name: Devices
+  - name: Events
+  - name: Alerts
+  - name: Analytics
+  - name: Operations
+
+paths:
+  /health:
+    get:
+      tags: [Operations]
+      summary: Liveness check including replica set primary
+      security: []
+      responses:
+        '200': { description: OK }
+        '503': { description: Database unavailable }
+
+  /api/v1/cluster/status:
+    get:
+      tags: [Operations]
+      summary: Replica set member states (PRIMARY/SECONDARY), health and replication time
+      responses:
+        '200': { description: OK }
+
+  /api/v1/homes:
+    get:
+      tags: [Homes]
+      summary: List homes
+      parameters:
+        - { name: city, in: query, schema: { type: string } }
+        - { name: customerRef, in: query, schema: { type: string }, description: CRM customer id }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Home' } } } }
+    post:
+      tags: [Homes]
+      summary: Register a home
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/Home' } } }
+      responses:
+        '201': { description: Created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { description: homeId already exists }
+
+  /api/v1/homes/{homeId}:
+    parameters: [{ $ref: '#/components/parameters/homeId' }]
+    get:
+      tags: [Homes]
+      summary: Get a home with its devices
+      responses:
+        '200': { description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Homes]
+      summary: Update a home (e.g. preferences)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Home' }
+            example: { preferences: { targetTemperature: 20, nightStart: '23:00', nightEnd: '06:30' } }
+      responses:
+        '200': { description: Updated home }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Homes]
+      summary: Delete a home and all its devices, events and alerts (GDPR erasure)
+      responses:
+        '200': { description: Counts of deleted documents }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/devices:
+    get:
+      tags: [Devices]
+      summary: List devices
+      parameters:
+        - { name: homeId, in: query, schema: { type: string } }
+        - { name: type, in: query, schema: { $ref: '#/components/schemas/DeviceType' } }
+        - { name: room, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [active, inactive, faulty] } }
+      responses:
+        '200': { description: OK }
+    post:
+      tags: [Devices]
+      summary: Register a device in a home
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Device' }
+            example: { deviceId: H001-garage-light, homeId: H001, type: light, room: hallway, manufacturer: Philips Hue }
+      responses:
+        '201': { description: Created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { description: deviceId already exists }
+
+  /api/v1/devices/{deviceId}:
+    parameters: [{ $ref: '#/components/parameters/deviceId' }]
+    get:
+      tags: [Devices]
+      summary: Get a device including its latest state
+      responses:
+        '200': { description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Devices]
+      summary: Update room, firmware or status
+      requestBody:
+        required: true
+        content: { application/json: { example: { firmware: 2.1.0, status: faulty } } }
+      responses:
+        '200': { description: Updated device }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Devices]
+      summary: Remove a device
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/events:
+    get:
+      tags: [Events]
+      summary: Query sensor events (newest first)
+      description: At least one of homeId or deviceId is required.
+      parameters:
+        - { name: homeId, in: query, schema: { type: string } }
+        - { name: deviceId, in: query, schema: { type: string } }
+        - { name: type, in: query, schema: { $ref: '#/components/schemas/DeviceType' } }
+        - { name: room, in: query, schema: { type: string } }
+        - $ref: '#/components/parameters/from'
+        - $ref: '#/components/parameters/to'
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 1000, default: 100 } }
+      responses:
+        '200': { description: OK }
+        '400': { $ref: '#/components/responses/BadRequest' }
+    post:
+      tags: [Events]
+      summary: Submit a sensor event over HTTP (alternative to MQTT)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventInput' }
+            example: { deviceId: H001-kitchen-temperature, value: 21.4 }
+      responses:
+        '201': { description: Stored event, plus any alert it raised }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /api/v1/alerts:
+    get:
+      tags: [Alerts]
+      summary: List safety alerts
+      parameters:
+        - { name: homeId, in: query, schema: { type: string } }
+        - { name: kind, in: query, schema: { type: string, enum: [smoke, intrusion, door_unlocked, temperature, device_offline] } }
+        - { name: severity, in: query, schema: { type: string, enum: [info, warning, critical] } }
+        - { name: acknowledged, in: query, schema: { type: boolean } }
+        - { name: limit, in: query, schema: { type: integer, default: 100 } }
+      responses:
+        '200': { description: OK }
+
+  /api/v1/alerts/{id}/acknowledge:
+    post:
+      tags: [Alerts]
+      summary: Acknowledge an alert
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Updated alert }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/analytics/overview:
+    get:
+      tags: [Analytics]
+      summary: Estate-wide totals - events per day and type, device status, alerts
+      parameters: [{ $ref: '#/components/parameters/from' }, { $ref: '#/components/parameters/to' }]
+      responses:
+        '200': { description: OK }
+
+  /api/v1/analytics/homes/{homeId}/usage:
+    get:
+      tags: [Analytics]
+      summary: Per-device activations, hours switched on and smart-plug energy (kWh)
+      parameters: [{ $ref: '#/components/parameters/homeId' }, { $ref: '#/components/parameters/from' }, { $ref: '#/components/parameters/to' }]
+      responses:
+        '200': { description: OK }
+
+  /api/v1/analytics/homes/{homeId}/activity-by-hour:
+    get:
+      tags: [Analytics]
+      summary: Motion detections by hour of day (UK time) and room - occupancy pattern
+      parameters: [{ $ref: '#/components/parameters/homeId' }, { $ref: '#/components/parameters/from' }, { $ref: '#/components/parameters/to' }]
+      responses:
+        '200': { description: OK }
+
+  /api/v1/analytics/homes/{homeId}/routine:
+    get:
+      tags: [Analytics]
+      summary: Predicted daily routine (median wake-up, leave and return times) for weekdays and weekends
+      parameters: [{ $ref: '#/components/parameters/homeId' }]
+      responses:
+        '200': { description: OK }
+
+  /api/v1/analytics/homes/{homeId}/climate:
+    get:
+      tags: [Analytics]
+      summary: Daily average/min/max temperature and humidity per room
+      parameters: [{ $ref: '#/components/parameters/homeId' }, { $ref: '#/components/parameters/from' }, { $ref: '#/components/parameters/to' }]
+      responses:
+        '200': { description: OK }
+
+  /api/v1/analytics/homes/{homeId}/recommendations:
+    get:
+      tags: [Analytics]
+      summary: Energy, comfort and safety feedback for the home owner
+      parameters: [{ $ref: '#/components/parameters/homeId' }, { $ref: '#/components/parameters/from' }, { $ref: '#/components/parameters/to' }]
+      responses:
+        '200': { description: OK }
+
+components:
+  securitySchemes:
+    ApiKey: { type: apiKey, in: header, name: x-api-key }
+  parameters:
+    homeId: { name: homeId, in: path, required: true, schema: { type: string, example: H001 } }
+    deviceId: { name: deviceId, in: path, required: true, schema: { type: string, example: H001-kitchen-smoke-alarm } }
+    from: { name: from, in: query, schema: { type: string, format: date-time } }
+    to: { name: to, in: query, schema: { type: string, format: date-time } }
+  responses:
+    BadRequest:
+      description: Invalid input or schema validation failure
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: Not found
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  schemas:
+    Error:
+      type: object
+      properties: { error: { type: string }, details: {} }
+    DeviceType:
+      type: string
+      enum: [door_lock, blind, light, light_switch, thermostat, temperature, humidity, motion, door_contact, smoke_alarm, smart_plug]
+    Home:
+      type: object
+      required: [homeId, customerRef, address, rooms]
+      properties:
+        homeId: { type: string, pattern: '^H[0-9]{3,}$', example: H021 }
+        customerRef: { type: string, example: CRM-10021 }
+        name: { type: string }
+        address:
+          type: object
+          properties: { line1: { type: string }, city: { type: string }, postcode: { type: string } }
+        rooms: { type: array, items: { type: string }, example: [hallway, kitchen, living_room] }
+        preferences:
+          type: object
+          properties:
+            targetTemperature: { type: number, minimum: 10, maximum: 30 }
+            nightStart: { type: string, example: '23:00' }
+            nightEnd: { type: string, example: '06:00' }
+            notifyContacts: { type: array, items: { type: string } }
+    Device:
+      type: object
+      required: [deviceId, homeId, type, room]
+      properties:
+        deviceId: { type: string }
+        homeId: { type: string }
+        type: { $ref: '#/components/schemas/DeviceType' }
+        room: { type: string }
+        manufacturer: { type: string }
+        model: { type: string }
+        firmware: { type: string }
+        status: { type: string, enum: [active, inactive, faulty] }
+        lastSeen: { type: string, format: date-time, readOnly: true }
+        lastState: { type: object, readOnly: true }
+    EventInput:
+      type: object
+      required: [deviceId]
+      properties:
+        deviceId: { type: string }
+        state: { type: string, description: 'e.g. on/off, locked/unlocked, detected/clear, smoke' }
+        value: { type: number, description: 'numeric reading in the unit of the device type' }
+        battery: { type: number, minimum: 0, maximum: 100 }
+        ts: { type: string, format: date-time, description: defaults to time received }
