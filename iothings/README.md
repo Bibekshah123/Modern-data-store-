@@ -414,6 +414,8 @@ These scripts give clear output that you can screenshot for the report.
 | MQTT validation | `... simulator.js --invalid`, then `docker compose logs ingest` |
 | API documentation | http://localhost:4000/docs |
 | Live ingest statistics | `docker compose logs -f ingest` while the simulator runs |
+| Ingest throughput (load test) | `docker compose --profile sim run --rm simulator node scripts/load-test.js --messages 100000` |
+| Time-series granularity benchmark | `scripts/mongosh.sh admin mongo/benchmark-granularity.js` |
 
 Example failover output:
 
@@ -437,7 +439,7 @@ Database: `iothings`
 |---|---|---|---|
 | `homes` | Validated with `$jsonSchema` | Address, rooms, preferences (target temperature, night hours, notification contacts), and `customerRef` linking to the existing CRM | `homeId` (unique), `customerRef`, `address.postcode` |
 | `devices` | Validated with `$jsonSchema` | Type (one of 11), room, manufacturer, model, firmware, status, plus a denormalised `lastState` and `lastSeen` | `deviceId` (unique), `{homeId, type}` |
-| `sensor_events` | **Time-series** (`timeField: ts`, `metaField: meta`, granularity seconds, TTL 730 days) | One document per activation | `{meta.homeId, ts}`, `{meta.deviceId, ts}`, `{meta.type, ts}` |
+| `sensor_events` | **Time-series** (`timeField: ts`, `metaField: meta`, granularity minutes, TTL 730 days) | One document per activation | `{meta.homeId, ts}`, `{meta.deviceId, ts}`, `{meta.type, ts}` |
 | `alerts` | Validated with `$jsonSchema` | kind, severity, message, time and acknowledgement | `{homeId, acknowledged, ts}`, `{severity, ts}` |
 
 Example documents:
@@ -468,6 +470,7 @@ Example documents:
 ### Design decisions
 
 - **Time-series collection for events.** MongoDB groups readings from the same device into compressed buckets, which suits append-only sensor data and makes time-range queries fast.
+- **`minutes` granularity, chosen by measurement.** Most devices report only a few times an hour. With `seconds` granularity, buckets close after one hour and hold only about 3 events each. `mongo/benchmark-granularity.js` compares the options on the same data: `minutes` needs 3.6 MB against 19.2 MB for `seconds` and 26.2 MB for a plain collection, and reads fewer buckets per query. `hours` is slightly smaller, but its buckets span up to 30 days, which is too coarse for day-level queries.
 - **Reference (not embed) devices in homes.** A home can have many devices, and devices are updated often, so they get their own collection. `GET /homes/{id}` joins the two with `$lookup`.
 - **Denormalised `lastState` on each device.** Dashboards can show the current state without scanning events.
 - **`customerRef`** links to the existing CRM or ERP systems instead of copying customer personal data into the new store.
@@ -501,7 +504,7 @@ Example documents:
 
 | Item | Default |
 |---|---|
-| Homes | 20, spread over 10 UK cities |
+| Homes | 20, spread over 8 UK cities |
 | Occupant profiles | commuter, remote worker, shift worker |
 | Rooms per home | hallway, living room, kitchen, bedroom, bathroom |
 | Devices | 24 per home, 480 in total |
@@ -593,6 +596,7 @@ The unit tests (`test/devices.test.js`, using `node:test`) cover:
 
 | Problem | Fix |
 |---|---|
+| Messages lost during large bursts; broker log says `Outgoing messages are being dropped` | Mosquitto's default queue (1,000 messages per client) is too small. `docker/mosquitto/mosquitto.conf` raises it (`max_queued_messages 200000`, `max_inflight_messages 500`). Restart with `docker compose restart mosquitto`. |
 | `port is already allocated` | Another program is using the port. Change `API_PORT` in `.env`, or edit the port mapping in `docker-compose.yml`. |
 | `setup.sh` waits forever for "healthy" | Check `docker compose logs mongo1`. A common cause is a missing or unreadable `docker/mongo/keyfile`. Delete it and run setup again. |
 | API returns `401` | Send the header `x-api-key: <API_KEY from .env>`. |
@@ -622,11 +626,13 @@ iothings/
 │   ├── 02-create-users.js      Admin and least-privilege users
 │   ├── 03-create-schema.js     Collections, validators, time-series, TTL, indexes
 │   ├── demo-queries.js         Create/read/update/delete and aggregation demo
-│   └── demo-rbac.js            Read-only user demo
+│   ├── demo-rbac.js            Read-only user demo
+│   └── benchmark-granularity.js  Storage/query benchmark of time-series granularities
 ├── scripts/
 │   ├── setup.sh                One-command installation
 │   ├── seed.js                 Dataset generator
 │   ├── failover-demo.sh        High-availability demo
+│   ├── load-test.js            MQTT → MongoDB throughput test
 │   └── mongosh.sh              Shell access as any user
 ├── src/
 │   ├── config.js               Environment configuration

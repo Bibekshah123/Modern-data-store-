@@ -1,0 +1,1500 @@
+<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><title>IoThings Sensors Database Report</title>
+<style>
+@page { size: A4; margin: 22mm 20mm 22mm 20mm;
+  @bottom-center { content: "Page " counter(page) " of " counter(pages); font: 9pt Arial, sans-serif; color: #555; }
+  @top-right { content: "IoThings Sensors Database"; font: 8.5pt Arial, sans-serif; color: #888; } }
+@page :first { @bottom-center { content: none; } @top-right { content: none; } }
+html { font-family: Calibri, Carlito, 'Segoe UI', Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #1d1d1d; }
+body { margin: 0; }
+h1 { font-size: 26pt; line-height: 1.2; color: #0d3b66; margin: 0 0 8pt; }
+h2 { font-size: 16pt; color: #0d3b66; border-bottom: 2px solid #0d3b66; padding-bottom: 3pt; margin: 18pt 0 8pt; }
+h3 { font-size: 13pt; color: #144e86; margin: 14pt 0 4pt; }
+h4 { font-size: 11.5pt; color: #144e86; margin: 12pt 0 4pt; }
+h2.pb { break-before: page; }
+p { margin: 0 0 7pt; text-align: justify; }
+li { margin-bottom: 3pt; }
+table { border-collapse: collapse; width: 100%; margin: 6pt 0 10pt; font-size: 9.5pt; line-height: 1.35; break-inside: auto; }
+th { background: #0d3b66; color: #fff; text-align: left; padding: 4pt 5pt; }
+td { border-bottom: 1px solid #d5d9df; padding: 3.5pt 5pt; vertical-align: top; }
+tr:nth-child(even) td { background: #f4f6f9; }
+tr { break-inside: avoid; }
+code { font-family: 'DejaVu Sans Mono', Consolas, monospace; font-size: 8.8pt; background: #f1f3f5; padding: 0 2px; border-radius: 2px; }
+pre { background: #0f1b2a; color: #e6edf3; padding: 8pt 10pt; border-radius: 4px; font-size: 8pt; line-height: 1.35;
+      white-space: pre-wrap; word-break: break-word; break-inside: avoid; margin: 8pt 0 2pt; }
+pre code { background: none; color: inherit; padding: 0; font-size: 8pt; }
+p.caption { font-size: 9.5pt; font-style: italic; color: #444; text-align: left; margin: 0 0 10pt; }
+.refs p { text-align: left; padding-left: 18pt; text-indent: -18pt; margin-bottom: 5pt; font-size: 10pt; line-height: 1.4; }
+figure { margin: 10pt 0 12pt; break-inside: avoid; text-align: center; }
+figure img { max-width: 100%; max-height: 190mm; border: 1px solid #d5d9df; }
+figcaption { font-size: 9.5pt; font-style: italic; color: #444; margin-top: 4pt; text-align: left; }
+strong { color: #0d2a4a; }
+.cover { height: 250mm; display: flex; flex-direction: column; justify-content: center; }
+.cover h1 { font-size: 34pt; }
+.cover p { font-size: 15pt; color: #144e86; text-align: left; }
+.cover table { font-size: 11pt; width: 70%; margin-top: 30pt; }
+.cover th { display: none; }
+.cover td:first-child { width: 38%; }
+</style></head><body><section class="cover"><h1>IoThings Sensors Database</h1>
+<p><strong>Design, Implementation and Evaluation of a Distributed MongoDB Data Store for Home-Automation Sensor Data</strong></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Prepared for</strong></td>
+<td>IoThings Home Automation Solutions Ltd (UK SME)</td>
+</tr>
+<tr>
+<td><strong>Prepared by</strong></td>
+<td><em>[Your name]</em>, consultant data scientist / programmer / analyst</td>
+</tr>
+<tr>
+<td><strong>Date</strong></td>
+<td>September 2026</td>
+</tr>
+<tr>
+<td><strong>Version</strong></td>
+<td>1.0</td>
+</tr>
+<tr>
+<td><strong>Project repository</strong></td>
+<td><code>iothings/</code> (source code, scripts, dataset generator, README)</td>
+</tr>
+</tbody>
+</table></section><h2>Executive Summary</h2>
+<p>IoThings installs sensors that automate homes and report their activity over MQTT. The company already runs relational systems for ERP, CRM, finance, order processing and logistics. It now needs a data store that can absorb a continuous stream of sensor activations, keep that data safe, and turn it into feedback for home owners. This report explains the principal types of NoSQL database, critically compares the relational and document-store approaches, and then presents a working, tested implementation for IoThings.</p>
+<p><strong>What was built.</strong> A three-member MongoDB 7 replica set, secured with keyfile authentication and role-based access control. An authenticated Eclipse Mosquitto MQTT broker. A Node.js ingest service that validates each sensor message, raises safety alerts and writes events in batches. A documented REST API with create/read/update/delete operations and six analytics endpoints. A reproducible synthetic dataset: 20 homes, 480 devices and 289,602 events over 30 days.</p>
+<p><strong>Key measured results:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Test</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Failover (primary killed, 5 runs)</td>
+<td>New primary elected in 10–16 s (mean 13.4 s); writes succeeded throughout</td>
+</tr>
+<tr>
+<td>End-to-end ingest throughput</td>
+<td>47,393 events/s stored with majority write concern (100,000-message burst)</td>
+</tr>
+<tr>
+<td>Storage after time-series tuning</td>
+<td>5.8 MB for 289,602 events, down from 131 MB (a 22× reduction)</td>
+</tr>
+<tr>
+<td>Typical API response time</td>
+<td>3–12 ms for per-home queries and analytics</td>
+</tr>
+</tbody>
+</table>
+<p>Testing also found and fixed a real defect. At default settings, the MQTT broker silently dropped up to 93% of messages during a burst.</p>
+<p><strong>Recommendation.</strong> IoThings should adopt MongoDB for sensor data <strong>alongside</strong>, not instead of, its relational systems ("polyglot persistence"). The replica set delivers the high availability the company asked for, the time-series collection keeps storage costs low, and the flexible document model lets new device types be added without schema migrations. Before production, the priorities are TLS encryption, deploying the three members on separate servers, and per-customer API authentication.</p>
+
+<h2 class="pb">Contents</h2>
+<ol>
+<li>Introduction</li>
+<li>Principal Types of NoSQL Databases</li>
+<li>Critical Comparison: Relational Databases and Document Stores</li>
+<li>IoThings NoSQL Database Design and Implementation</li>
+<li>API Implementation and Documentation</li>
+<li>Summary and Conclusion</li>
+<li>References
+- Appendix A: Dataset Used for Testing
+- Appendix B: Test Data and Procedures
+- Appendix C: Unit Tests
+- Appendix D: Reproducing the Results</li>
+</ol>
+<p><strong>List of figures</strong></p>
+<ol>
+<li>Overall system architecture</li>
+<li>Replica set configuration and status</li>
+<li>Collections, time-series options and indexes</li>
+<li>Example document from each collection</li>
+<li>Storage for the same events under four designs</li>
+<li>Role-based access control test</li>
+<li>MQTT safety alert and message validation</li>
+<li>CRUD, aggregation and index-usage demonstration</li>
+<li>Failover test output</li>
+<li>Swagger UI API documentation</li>
+<li>Example API responses</li>
+<li>Occupancy pattern derived by the API</li>
+</ol>
+
+<h2 class="pb">1. Introduction</h2>
+<p>IoThings Home Automation Solutions is a UK start-up that fits homes with smart sensors and actuators: door locks and contacts, lights and switches, motorised blinds, thermostats, temperature and humidity sensors, motion detectors, smoke alarms and smart plugs. Each device reports its activations as MQTT messages. IoThings wants to use this data for three purposes:</p>
+<ul>
+<li>to <strong>predict household activity</strong>, for example when occupants wake, leave and return</li>
+<li>to <strong>recommend changes</strong> to owners, for example on energy use and comfort</li>
+<li>to <strong>keep homes and occupants safe</strong>, for example by sending a notification when a smoke alarm triggers or a door is unlocked at night</li>
+</ul>
+<p>The company's existing systems (ERP, CRM, financial, order processing/sales and logistics) are relational. They suit structured, transactional business records, but not a high-volume, append-only stream of time-stamped sensor readings from many device types. IoThings has asked for a new NoSQL core database for sensor-activation data. It has also asked for:</p>
+<ul>
+<li>a "three cluster" MongoDB system, because it is concerned about data security and availability</li>
+<li>a simple Node.js server that receives MQTT messages and stores them in MongoDB</li>
+<li>an API for accessing and processing the stored data</li>
+</ul>
+<p>As agreed, the scope is the <strong>sensors database</strong> only. The company's real data is protected by UK GDPR, so all testing uses a synthetic dataset built to mimic real household behaviour (section 4.7 and Appendix A).</p>
+<p>The rest of this report is organised as follows:</p>
+<ul>
+<li><strong>Section 2</strong> explains the four principal types of NoSQL database and the theory behind them.</li>
+<li><strong>Section 3</strong> critically compares relational databases with document stores in general terms, so that IoThings can apply the analysis to any vendor.</li>
+<li><strong>Section 4</strong> presents the design, installation, configuration and testing of the MongoDB system, including measured performance and failover results.</li>
+<li><strong>Section 5</strong> documents the REST API.</li>
+<li><strong>Section 6</strong> concludes with a recommendation, the limitations and future work.</li>
+</ul>
+<figure><img src="figures/architecture.png" alt=""><figcaption>Figure 1: Overall system architecture. Sensors publish over MQTT to the broker; the ingest service validates and stores events in the three-member replica set; the REST API serves applications. The existing relational systems remain unchanged and are linked by a customer reference.</figcaption></figure>
+
+<h2 class="pb">2. Principal Types of NoSQL Databases</h2>
+<h3>2.1 What "NoSQL" means and why it emerged</h3>
+<p>"NoSQL" is best read as <strong>"Not Only SQL"</strong>. It is an umbrella term for databases that do not use the relational table model as their primary way of storing data (Sadalage and Fowler, 2012). It does not reject SQL or relational ideas. Many NoSQL products now offer SQL-like query languages, secondary indexes and ACID transactions. NoSQL systems grew from the needs of large web companies in the 2000s. Google's Bigtable (Chang et al., 2006) and Amazon's Dynamo (DeCandia et al., 2007) were built for data volumes and availability targets that a single relational server could not meet economically. Three pressures drove the movement (Cattell, 2011):</p>
+<ol>
+<li><strong>Scale.</strong> Spreading data and load across many cheap servers ("scaling out") instead of buying ever larger single machines ("scaling up").</li>
+<li><strong>Variety.</strong> Storing data whose structure differs between records or changes often, without costly schema migrations.</li>
+<li><strong>Availability.</strong> Continuing to accept reads and writes when individual servers or network links fail.</li>
+</ol>
+<p>NoSQL databases are usually grouped into four families. Each makes different trade-offs, and the right choice depends on how the data will be accessed.</p>
+<h3>2.2 Key-value stores</h3>
+<p>A key-value store is the simplest model: a very large distributed hash table. Each item is an opaque value (a string, number or binary object) stored and retrieved by a unique key. Examples include Redis, Amazon DynamoDB and Riak. Dynamo showed how such a store can remain writable during failures by replicating each key across several nodes and resolving conflicts later (DeCandia et al., 2007).</p>
+<ul>
+<li><strong>Strengths:</strong> extremely fast lookups by key (often sub-millisecond); straightforward horizontal partitioning; a simple programming interface; ideal for caching and session state.</li>
+<li><strong>Weaknesses:</strong> the database cannot query or index inside the value, so questions such as "all devices in Birmingham" need extra structures maintained by the application; relationships between items are not supported.</li>
+<li><strong>Relevance to IoThings:</strong> a good fit for a cache of each device's latest state, or for per-device rate limiting. It is unsuitable as the main analytical store.</li>
+</ul>
+<h3>2.3 Document stores</h3>
+<p>A document store also stores items under a key, but the value is a <strong>structured, self-describing document</strong>, usually JSON or a binary equivalent such as MongoDB's BSON. Documents can contain nested objects and arrays. Because the database understands their structure, it can index and query any field. Examples include MongoDB, Couchbase and Amazon DocumentDB.</p>
+<ul>
+<li><strong>Strengths:</strong></li>
+<li>A document maps naturally onto objects in application code, so no object-relational mapping layer is needed.</li>
+<li>Related data that is read together can be stored together, avoiding joins.</li>
+<li>The schema is flexible: documents in one collection can differ, which suits evolving products.</li>
+<li>Queries and aggregations are rich, and replication and sharding are built in.</li>
+<li><strong>Weaknesses:</strong></li>
+<li>Data is often duplicated (denormalised) for read speed, so the application must keep the copies consistent.</li>
+<li>Relationships between many entities (many-to-many joins) are less natural than in SQL.</li>
+<li>Flexibility can lead to inconsistent data unless schema validation is applied.</li>
+<li><strong>Relevance to IoThings:</strong> a strong fit. A sensor message is already a small JSON document, the eleven device types report different fields, and new device types can be added without altering existing data. This is the model implemented in section 4.</li>
+</ul>
+<h3>2.4 Wide-column (column-family) stores</h3>
+<p>Wide-column stores, derived from Bigtable (Chang et al., 2006), organise data into rows identified by a key. Each row holds a flexible, possibly very large set of columns grouped into column families, and data is stored sorted by row key. Apache Cassandra (Lakshman and Malik, 2010) and HBase are the best-known examples.</p>
+<ul>
+<li><strong>Strengths:</strong> outstanding write throughput and linear scalability across many nodes and data centres; efficient range scans when the row key is designed around the query (for example "device ID + time"); tunable consistency.</li>
+<li><strong>Weaknesses:</strong> tables must be designed around known query patterns, and a new question often needs a new table; ad-hoc queries, aggregations and secondary indexes are limited; operations and data modelling are complex.</li>
+<li><strong>Relevance to IoThings:</strong> a credible alternative for very large telemetry volumes (millions of devices). At IoThings' current scale, its rigidity and operational cost outweigh its throughput advantage.</li>
+</ul>
+<h3>2.5 Graph databases</h3>
+<p>Graph databases store <strong>nodes</strong> (entities) and <strong>edges</strong> (relationships), each of which can carry properties. Relationships are first-class data, so traversing them ("friends of friends", "which devices share a gateway") takes roughly constant time per step, rather than the growing join cost seen in relational systems (Robinson, Webber and Eifrem, 2015; Angles and Gutierrez, 2008). Examples include Neo4j and Amazon Neptune.</p>
+<ul>
+<li><strong>Strengths:</strong> natural modelling of highly connected data; efficient multi-step traversals; expressive graph query languages such as Cypher.</li>
+<li><strong>Weaknesses:</strong> less suited to bulk aggregation over large volumes of simple records; horizontal scaling is harder because graphs are difficult to partition; the ecosystem is smaller.</li>
+<li><strong>Relevance to IoThings:</strong> potentially useful in future for modelling relationships between homes, rooms, devices and automation rules. It is not appropriate for the time-series event stream.</li>
+</ul>
+<h3>2.6 Underlying theory</h3>
+<p><strong>CAP theorem.</strong> Brewer conjectured, and Gilbert and Lynch (2002) proved, that when a network <strong>partition</strong> (P) occurs, a distributed data store must choose between <strong>consistency</strong> (C: every read sees the latest write) and <strong>availability</strong> (A: every request receives a response). Brewer (2012) later clarified that the choice arises only during a partition, and that systems can make it differently for different operations.</p>
+<p><strong>PACELC.</strong> Abadi (2012) extended CAP: <em>if</em> there is a Partition, choose Availability or Consistency; <em>Else</em>, choose Latency or Consistency. This matters more in day-to-day operation, because replicating every write synchronously improves consistency but adds latency. Abadi (2012) placed MongoDB in the PA/EC class. In practice its position depends on configuration: during a partition, only the side holding a majority can elect a primary and accept writes, and with majority write concern and primary reads it behaves consistently. The balance is tuned through <strong>write concern</strong> and <strong>read preference</strong>, as section 4 shows.</p>
+<p><strong>ACID and BASE.</strong> Relational databases guarantee <strong>ACID</strong> transactions: Atomicity, Consistency, Isolation and Durability (Haerder and Reuter, 1983). Many early NoSQL systems relaxed these guarantees in favour of <strong>BASE</strong>: Basically Available, Soft state, Eventually consistent (Pritchett, 2008). Here replicas may briefly disagree but converge over time. The distinction has blurred. MongoDB has supported multi-document ACID transactions since version 4.0, and several relational systems now scale horizontally.</p>
+<p><strong>Scaling mechanisms.</strong> NoSQL systems scale with two techniques:</p>
+<ul>
+<li><strong>Replication</strong> keeps copies of the same data on several servers. It provides redundancy and extra read capacity.</li>
+<li><strong>Sharding</strong> (partitioning) divides the data across servers by a key. It provides write capacity and storage beyond one machine.</li>
+</ul>
+<p>Replication in MongoDB uses an elected primary and a Raft-style consensus protocol (Zhou et al., 2021; Ongaro and Ousterhout, 2014).</p>
+<p><strong>Table 1: Summary of the four NoSQL types</strong></p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Data model</th>
+<th>Examples</th>
+<th>Main strengths</th>
+<th>Main weaknesses</th>
+<th>Fit for IoThings</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Key-value</td>
+<td>Key → opaque value</td>
+<td>Redis, DynamoDB, Riak</td>
+<td>Fastest lookups; simple scaling</td>
+<td>No queries inside values; no relationships</td>
+<td>Device-state cache</td>
+</tr>
+<tr>
+<td>Document</td>
+<td>Key → JSON/BSON document</td>
+<td>MongoDB, Couchbase</td>
+<td>Flexible schema; rich queries; objects map directly</td>
+<td>Duplication; weaker many-to-many</td>
+<td><strong>Main sensor store (chosen)</strong></td>
+</tr>
+<tr>
+<td>Wide-column</td>
+<td>Row key → column families</td>
+<td>Cassandra, HBase</td>
+<td>Massive write throughput; multi-data-centre</td>
+<td>Query-driven design; limited ad-hoc queries</td>
+<td>Future option at very large scale</td>
+</tr>
+<tr>
+<td>Graph</td>
+<td>Nodes + edges</td>
+<td>Neo4j, Neptune</td>
+<td>Fast relationship traversal</td>
+<td>Harder to scale; poor at bulk aggregation</td>
+<td>Future device/rule relationships</td>
+</tr>
+</tbody>
+</table>
+
+<h2 class="pb">3. Critical Comparison: Relational Databases and Document Stores</h2>
+<p>This section is deliberately generic. It compares the relational model with document stores as a class, so that its conclusions still hold if IoThings chooses a vendor other than MongoDB.</p>
+<h3>3.1 Data model and schema</h3>
+<p>A relational database stores data in tables whose structure is declared in advance (Codd, 1970). <strong>Normalisation</strong> stores each fact once and links tables with foreign keys. The fixed schema is a strong guarantee: every row has the declared columns, with the declared types and constraints. The cost is rigidity. Adding a new sensor type with new attributes means altering tables or adding sparse, mostly empty columns, and schema migrations on large tables can be slow and risky.</p>
+<p>A document store is <strong>schema-flexible</strong>. Each document carries its own structure, so a thermostat reading and a door-lock event can sit in the same collection with different fields. This speeds up development and suits heterogeneous IoT data. The risk is that "schema-less" becomes "schema-chaotic", with misspelt fields and wrong types accumulating silently. The mitigation is optional schema validation in the database, used in this project (section 4.5). With validation, flexibility is kept where it helps and structure is enforced where it matters.</p>
+<p><strong>Evaluation:</strong> the relational model wins where data structure is stable and integrity is paramount, as in IoThings' financial and order data. The document model wins where structure varies and evolves, as in sensor payloads.</p>
+<h3>3.2 Relationships and joins</h3>
+<p>Relational databases excel at relationships. Joins can combine any tables at query time, so they answer questions nobody anticipated when the schema was designed. Document stores favour <strong>embedding</strong> related data inside a document when it is read together, and <strong>referencing</strong> it (storing an identifier) when it is large, shared or updated independently. Embedding removes joins and makes reads fast. Referencing requires either several queries or a lookup operation such as MongoDB's <code>$lookup</code>, which is generally less optimised than a relational join. The document model therefore demands <strong>query-driven design</strong>: the designer must know the main access patterns in advance (Sadalage and Fowler, 2012).</p>
+<p><strong>Evaluation:</strong> for highly interrelated business data (customers, orders, invoices, stock), relational joins are a genuine advantage. For sensor events, which are almost always read by device or home over a time range, the access pattern is known and narrow, so the document model's weakness costs little.</p>
+<h3>3.3 Transactions and consistency</h3>
+<p>Relational databases provide full ACID transactions across any number of rows and tables. This is essential when, for example, an order and a stock movement must both succeed or both fail. Document stores traditionally guaranteed atomicity only within a single document, on the reasoning that a well-designed document contains everything that must change together. Modern document stores, including MongoDB, now offer multi-document ACID transactions, but these are slower and are not the intended default pattern. In a replicated document store, consistency is <strong>tunable</strong>. The application chooses how many replicas must acknowledge a write (write concern) and which replicas may serve reads (read preference). Stronger settings cost latency, as PACELC predicts.</p>
+<p><strong>Evaluation:</strong> strict, multi-entity transactional integrity remains the relational model's strongest argument. Sensor events are independent, append-only facts, so single-document atomicity with majority-acknowledged writes gives all the durability they need.</p>
+<h3>3.4 Scalability and availability</h3>
+<p>Relational databases were designed for a single server and traditionally <strong>scale vertically</strong> with a bigger machine. Replication for read scaling and failover is mature, but spreading writes across many servers usually needs application-level sharding or specialist products. Document stores were designed to <strong>scale horizontally</strong>. Replication with automatic failover and hash- or range-based sharding are built in (Cattell, 2011). The trade-off is operational complexity: a cluster has more moving parts to monitor, and a poor shard key can create hot spots.</p>
+<p><strong>Evaluation:</strong> sensor data grows with every home installed and every hour that passes, while business data grows much more slowly. The ingest workload benefits most from horizontal scaling and automatic failover.</p>
+<h3>3.5 Query language, tooling and skills</h3>
+<p>SQL is an international standard, used for five decades, with a huge ecosystem of reporting tools, trained staff and literature. Document stores use product-specific query APIs. MongoDB's aggregation pipeline is powerful, with windowing, time bucketing and statistical operators such as median, but the skills do not transfer directly between vendors. This creates a degree of <strong>vendor lock-in</strong> and a training cost. Business-intelligence tools also connect to SQL databases more readily.</p>
+<p><strong>Evaluation:</strong> this is a genuine cost for a small company. It is mitigated by exposing sensor data through a stable REST API (section 5), so most consumers never touch the query language.</p>
+<h3>3.6 Performance for time-series writes</h3>
+<p>Relational databases handle insert-heavy workloads adequately, but every row carries per-row overhead, and every index must be updated on each insert. General-purpose tables do not compress repetitive time-stamped data well. Document stores, and especially dedicated time-series collections, group measurements from the same source into compressed <strong>buckets</strong>. Section 4.10 measures the effect in this project. For the same 289,602 events, a plain collection used 26.2 MB, while a tuned time-series collection used 3.6 MB.</p>
+<h3>3.7 NoSQL extends rather than replaces SQL</h3>
+<p>The most important conclusion of this comparison is that the two approaches are <strong>complementary</strong>. Fowler (2011) calls the practice of choosing the store that fits each workload <strong>polyglot persistence</strong>, and Stonebraker (2010) warns against treating NoSQL as a universal replacement. IoThings should keep its ERP, CRM, financial, sales and logistics data relational, where ACID transactions and ad-hoc joins matter. It should add a document store for high-volume, variably structured sensor data, where flexible schema, compression and horizontal scaling matter. The two are linked by a customer reference (<code>customerRef</code>), so no personal data needs to be copied into the new store.</p>
+<p><strong>Table 2: Relational databases compared with document stores</strong></p>
+<table>
+<thead>
+<tr>
+<th>Criterion</th>
+<th>Relational</th>
+<th>Document store</th>
+<th>Evaluation for IoThings</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Schema</td>
+<td>Fixed, declared in advance; strong integrity</td>
+<td>Flexible per document; optional validation</td>
+<td>Document store for varied sensor payloads; relational for business records</td>
+</tr>
+<tr>
+<td>Relationships</td>
+<td>Joins across any tables; ad-hoc queries</td>
+<td>Embed or reference; <code>$lookup</code> for joins</td>
+<td>Sensor access patterns are narrow and known, so the join weakness costs little</td>
+</tr>
+<tr>
+<td>Transactions</td>
+<td>Full multi-table ACID</td>
+<td>Single-document atomic; multi-document ACID available but costly</td>
+<td>Relational for orders and finance; single-event atomicity is enough for sensors</td>
+</tr>
+<tr>
+<td>Consistency</td>
+<td>Strong by default</td>
+<td>Tunable (write concern, read preference)</td>
+<td>Majority writes give durability without much latency cost</td>
+</tr>
+<tr>
+<td>Scalability</td>
+<td>Vertical; horizontal is harder</td>
+<td>Horizontal replication and sharding built in</td>
+<td>Sensor data grows fastest, so scale-out matters</td>
+</tr>
+<tr>
+<td>Query language</td>
+<td>Standard SQL; vast ecosystem</td>
+<td>Vendor-specific APIs and pipelines</td>
+<td>Hide behind a REST API to limit lock-in</td>
+</tr>
+<tr>
+<td>Time-series writes</td>
+<td>Per-row and per-index overhead</td>
+<td>Bucketed, compressed time-series collections</td>
+<td>7× smaller than a plain collection (section 4.10)</td>
+</tr>
+<tr>
+<td>Maturity and skills</td>
+<td>Very mature; skills plentiful</td>
+<td>Mature but younger; skills rarer</td>
+<td>Training cost is modest for one bounded workload</td>
+</tr>
+</tbody>
+</table>
+
+<h2 class="pb">4. IoThings NoSQL Database Design and Implementation</h2>
+<h3>4.1 Requirements</h3>
+<p>The requirements below were derived from the brief. Each is traced to its evidence later in this report.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Requirement</th>
+<th>Where it is met</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>R1</td>
+<td>Store sensor-activation data received as MQTT messages</td>
+<td>4.6, Figure 7</td>
+</tr>
+<tr>
+<td>R2</td>
+<td>A "three cluster" MongoDB system for security and availability</td>
+<td>4.3, 4.9, Figures 2 and 9</td>
+</tr>
+<tr>
+<td>R3</td>
+<td>Protect the data (security, UK GDPR)</td>
+<td>4.4, Figure 6</td>
+</tr>
+<tr>
+<td>R4</td>
+<td>Support prediction, recommendations and safety notifications</td>
+<td>4.6, 5.3, Figures 11 and 12</td>
+</tr>
+<tr>
+<td>R5</td>
+<td>A Node.js server to handle MQTT messages</td>
+<td>4.6</td>
+</tr>
+<tr>
+<td>R6</td>
+<td>An API to access and process stored data</td>
+<td>Section 5, Figure 10</td>
+</tr>
+<tr>
+<td>R7</td>
+<td>Test data, CRUD and distributed data management demonstrated</td>
+<td>4.7–4.9, Appendices A and B</td>
+</tr>
+</tbody>
+</table>
+<h3>4.2 Technology choices</h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Choice (version tested)</th>
+<th>Justification</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Database</td>
+<td>MongoDB Community 7.0.43, replica set <code>rs0</code></td>
+<td>A document model matching JSON sensor messages; native time-series collections; built-in replication, failover and RBAC</td>
+</tr>
+<tr>
+<td>Message broker</td>
+<td>Eclipse Mosquitto 2.1.2</td>
+<td>A lightweight, widely used open-source MQTT broker with password authentication</td>
+</tr>
+<tr>
+<td>Server runtime</td>
+<td>Node.js 22.23.3</td>
+<td>Named in the brief; event-driven I/O suits many small concurrent messages</td>
+</tr>
+<tr>
+<td>Libraries</td>
+<td>MongoDB Node driver 6.21, MQTT.js 5.16, Express 4.22</td>
+<td>Official or de facto standard libraries</td>
+</tr>
+<tr>
+<td>API documentation</td>
+<td>OpenAPI 3.0 with Swagger UI</td>
+<td>An industry-standard, machine-readable, interactive specification</td>
+</tr>
+<tr>
+<td>Deployment</td>
+<td>Docker Compose (Docker 29.8)</td>
+<td>The whole system starts with one command and behaves the same on any machine</td>
+</tr>
+</tbody>
+</table>
+<p>All tests ran on one workstation (Intel Core i7-13700, 24 threads, 32 GB RAM). Section 6.1 discusses how running all three members on one host affects interpretation of the results.</p>
+<h3>4.3 Installation and configuration of the three-member replica set</h3>
+<p>A MongoDB <strong>replica set</strong> is a group of <code>mongod</code> servers that hold the same data. One member is the <strong>primary</strong> and accepts all writes, recording each change in an operations log (the <strong>oplog</strong>). The other members are <strong>secondaries</strong>: they continuously copy and replay the primary's oplog. Members exchange heartbeats every two seconds. If the primary becomes unreachable (by default for more than 10 seconds), the remaining members hold an <strong>election</strong>, and a secondary with an up-to-date copy becomes the new primary. An election needs votes from a <strong>majority</strong> of members. Three members is therefore the smallest configuration that survives the loss of any one server: the other two still form a majority (2 of 3). This is what the client's "three cluster" request should mean in practice.</p>
+<p>The cluster is defined in <code>docker-compose.yml</code>. Each member runs the same command:</p>
+<pre><code>mongod --replSet rs0 --bind_ip_all --port &lt;27017|27018|27019&gt; --keyFile /etc/mongo-keyfile
+</code></pre>
+<p><strong>Table 3: Replica set members</strong></p>
+<table>
+<thead>
+<tr>
+<th>Member</th>
+<th>Host:port</th>
+<th>Priority</th>
+<th>Votes</th>
+<th>Intended role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>mongo1</td>
+<td>mongo1:27017</td>
+<td>2</td>
+<td>1</td>
+<td>Preferred primary</td>
+</tr>
+<tr>
+<td>mongo2</td>
+<td>mongo2:27018</td>
+<td>1</td>
+<td>1</td>
+<td>Secondary</td>
+</tr>
+<tr>
+<td>mongo3</td>
+<td>mongo3:27019</td>
+<td>1</td>
+<td>1</td>
+<td>Secondary</td>
+</tr>
+</tbody>
+</table>
+<p><code>mongo1</code> has a higher <strong>priority</strong>. After any failover, once it has caught up, it takes back the primary role, which keeps the topology predictable for operations staff.</p>
+<p>A single script, <code>scripts/setup.sh</code>, performs the installation. It is safe to run more than once:</p>
+<ol>
+<li>Generates random passwords and an API key into a <code>.env</code> file, which is excluded from version control.</li>
+<li>Generates the replica set <strong>keyfile</strong>, a shared secret that members use to authenticate each other.</li>
+<li>Creates the Mosquitto password file.</li>
+<li>Starts the three <code>mongod</code> containers and the broker, then waits for their health checks.</li>
+<li>Runs <code>rs.initiate()</code> with the configuration in Table 3 (<code>mongo/01-init-replica-set.js</code>).</li>
+<li>Creates the administrator and application users (<code>mongo/02-create-users.js</code>).</li>
+<li>Creates the collections, validators and indexes (<code>mongo/03-create-schema.js</code>).</li>
+<li>Builds and starts the ingest service and the API.</li>
+</ol>
+<pre><code>--- rs.conf()
+mongo1:27017   priority=2 votes=1
+mongo2:27018   priority=1 votes=1
+mongo3:27019   priority=1 votes=1
+writeConcernMajorityJournalDefault=true
+--- rs.status()
+mongo1:27017   PRIMARY    health=1 optime=2026-09-30T11:06:04.000Z
+mongo2:27018   SECONDARY  health=1 optime=2026-09-30T11:06:04.000Z
+mongo3:27019   SECONDARY  health=1 optime=2026-09-30T11:06:04.000Z
+</code></pre>
+<p class="caption">Figure 2: Replica set configuration and status, captured from <code>mongosh</code>. All three members are healthy and have identical optimes, meaning the secondaries are fully up to date.</p>
+<p><strong>Write and read settings.</strong> The Node.js applications connect with a replica-set connection string listing all three members, plus the following options:</p>
+<ul>
+<li><code>writeConcern: { w: 'majority' }</code>: a write is acknowledged only after it is on at least two of the three members. An acknowledged sensor event therefore survives the loss of the primary.</li>
+<li><code>retryWrites</code> and <code>retryReads</code>: the driver transparently retries an operation once if an election interrupts it.</li>
+<li><code>readPreference: 'primaryPreferred'</code>: reads normally go to the primary (strongly consistent), but can fall back to a secondary during an election, so dashboards keep working.</li>
+</ul>
+<h3>4.4 Security design</h3>
+<p>Security was designed in layers, so that no single failure exposes the data.</p>
+<p><strong>Table 4: Security measures</strong></p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Measure</th>
+<th>Threat addressed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Between cluster members</td>
+<td>Keyfile authentication (<code>--keyFile</code>)</td>
+<td>A rogue server joining the replica set</td>
+</tr>
+<tr>
+<td>Database access</td>
+<td>Authentication required; <strong>role-based access control</strong> with least privilege (Table 5)</td>
+<td>Stolen application credentials being used for more than their purpose</td>
+</tr>
+<tr>
+<td>MQTT broker</td>
+<td><code>allow_anonymous false</code>; hashed password file; separate <code>ingest</code> and <code>gateway</code> accounts</td>
+<td>Unauthenticated devices injecting fake sensor data</td>
+</tr>
+<tr>
+<td>Message content</td>
+<td>Every message checked against the device registry and per-type rules (4.6)</td>
+<td>Malformed or spoofed data corrupting analytics</td>
+</tr>
+<tr>
+<td>Database content</td>
+<td><code>$jsonSchema</code> validators on <code>homes</code>, <code>devices</code> and <code>alerts</code></td>
+<td>Invalid documents from any client</td>
+</tr>
+<tr>
+<td>REST API</td>
+<td><code>x-api-key</code> header compared in constant time; 100 KB body limit; clients can write only listed fields; internal errors hidden from clients</td>
+<td>Unauthorised access, oversized payloads, mass-assignment, information leakage</td>
+</tr>
+<tr>
+<td>UK GDPR</td>
+<td>Personal data stays in the CRM (only <code>customerRef</code> is stored); events expire after 2 years (TTL); one API call erases all of a home's data</td>
+<td>Storage limitation and the right to erasure (ICO, 2023)</td>
+</tr>
+<tr>
+<td>Secrets</td>
+<td>Generated per installation; excluded from source control</td>
+<td>Credentials leaked through the code repository</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Table 5: Database users and roles</strong></p>
+<table>
+<thead>
+<tr>
+<th>User</th>
+<th>Roles</th>
+<th>Used by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>admin</code></td>
+<td><code>root</code></td>
+<td>Setup and administration only</td>
+</tr>
+<tr>
+<td><code>iothings_ingest</code></td>
+<td><code>readWrite</code> on <code>iothings</code></td>
+<td>MQTT ingest service</td>
+</tr>
+<tr>
+<td><code>iothings_api</code></td>
+<td><code>readWrite</code> on <code>iothings</code>, <code>clusterMonitor</code></td>
+<td>REST API (the monitor role serves <code>/cluster/status</code>)</td>
+</tr>
+<tr>
+<td><code>iothings_analyst</code></td>
+<td><code>read</code> on <code>iothings</code></td>
+<td>Analysts and reporting tools</td>
+</tr>
+</tbody>
+</table>
+<pre><code>connected as: [{&quot;user&quot;:&quot;iothings_analyst&quot;,&quot;db&quot;:&quot;iothings&quot;}]
+read homes: 20 documents
+delete refused: Unauthorized - not authorized on iothings to execute command { delete: &quot;homes&quot;, ... }
+</code></pre>
+<p class="caption">Figure 6: Role-based access control test (<code>mongo/demo-rbac.js</code>). The read-only analyst account can query data, but MongoDB refuses its attempt to delete every home.</p>
+<p><strong>Limitations.</strong> Traffic is not yet encrypted with TLS, and data is not encrypted at rest. Both are essential before production, and both are supported by MongoDB, Mosquitto and Node.js without code changes (section 6.2).</p>
+<h3>4.5 Data model</h3>
+<p>The database <code>iothings</code> contains four collections. The design follows the document-modelling principle of structuring data around how it will be queried (Sadalage and Fowler, 2012).</p>
+<p><strong>Table 6: Collections</strong></p>
+<table>
+<thead>
+<tr>
+<th>Collection</th>
+<th>Kind</th>
+<th>Contents</th>
+<th>Indexes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>homes</code></td>
+<td>Validated</td>
+<td>One document per property: address, rooms, owner preferences (target temperature, night hours, notification contacts) and <code>customerRef</code> linking to the CRM</td>
+<td><code>homeId</code> (unique), <code>customerRef</code>, <code>address.postcode</code></td>
+</tr>
+<tr>
+<td><code>devices</code></td>
+<td>Validated</td>
+<td>One document per installed device: type (one of 11), room, manufacturer, model, firmware, status, plus a copy of its latest state</td>
+<td><code>deviceId</code> (unique), <code>{homeId, type}</code></td>
+</tr>
+<tr>
+<td><code>sensor_events</code></td>
+<td><strong>Time-series</strong> (<code>timeField: ts</code>, <code>metaField: meta</code>, granularity <code>minutes</code>, 730-day TTL)</td>
+<td>One entry per activation</td>
+<td><code>{meta.homeId, ts}</code>, <code>{meta.deviceId, ts}</code>, <code>{meta.type, ts}</code></td>
+</tr>
+<tr>
+<td><code>alerts</code></td>
+<td>Validated</td>
+<td>Safety alerts: kind, severity, message, time, acknowledgement</td>
+<td><code>{homeId, acknowledged, ts}</code>, <code>{severity, ts}</code></td>
+</tr>
+</tbody>
+</table>
+<pre><code>homes          type=collection validator=yes
+devices        type=collection validator=yes
+alerts         type=collection validator=yes
+sensor_events  type=timeseries {&quot;timeField&quot;:&quot;ts&quot;,&quot;metaField&quot;:&quot;meta&quot;,&quot;granularity&quot;:&quot;minutes&quot;,
+               &quot;bucketMaxSpanSeconds&quot;:86400} expireAfterSeconds=63072000
+--- sensor_events indexes
+{&quot;meta&quot;:1,&quot;ts&quot;:1}  {&quot;meta.homeId&quot;:1,&quot;ts&quot;:-1}  {&quot;meta.deviceId&quot;:1,&quot;ts&quot;:-1}  {&quot;meta.type&quot;:1,&quot;ts&quot;:-1}
+</code></pre>
+<p class="caption">Figure 3: Collections and time-series options reported by <code>db.getCollectionInfos()</code> and <code>getIndexes()</code>. The expiry of 63,072,000 seconds is 730 days.</p>
+<pre><code class="language-js">// homes
+{ homeId: 'H005', customerRef: 'CRM-10005', name: 'Sheffield home 5',
+  address: { line1: '16 Victoria Road', city: 'Sheffield', postcode: 'S28 7HR' },
+  rooms: ['hallway', 'living_room', 'kitchen', 'bedroom', 'bathroom'],
+  preferences: { targetTemperature: 20.5, nightStart: '22:30', nightEnd: '06:30',
+                 notifyContacts: ['owner5@example.com'] },
+  profile: 'commuter', createdAt: ISODate('2026-08-24T00:00:00Z') }
+// devices
+{ deviceId: 'H005-hallway-door-lock', homeId: 'H005', type: 'door_lock', room: 'hallway',
+  manufacturer: 'Nuki', model: 'DOO-706', firmware: '3.5.3', status: 'active',
+  installedAt: ISODate('2026-08-24T00:00:00Z'),
+  lastSeen: ISODate('2026-09-29T22:22:19Z'), lastState: { state: 'locked' } }
+// sensor_events
+{ ts: ISODate('2026-09-29T22:22:19.279Z'),
+  meta: { homeId: 'H005', deviceId: 'H005-hallway-door-lock', room: 'hallway', type: 'door_lock' },
+  state: 'locked' }
+// alerts
+{ homeId: 'H001', deviceId: 'H001-kitchen-smoke-alarm', ts: ISODate('2026-09-16T17:31:56Z'),
+  kind: 'smoke', severity: 'critical', message: 'Smoke detected in kitchen', acknowledged: false }
+</code></pre>
+<p class="caption">Figure 4: An example document from each collection, as stored.</p>
+<p><strong>Design decisions:</strong></p>
+<ol>
+<li><strong>A time-series collection for events.</strong> Time-series collections (MongoDB 5.0 and later) store measurements from the same <code>meta</code> value (here, one device) in compressed buckets covering a time window. This cuts storage and speeds up time-range queries, which are the dominant access pattern. The granularity was chosen by experiment (section 4.10).</li>
+<li><strong>Devices are referenced, not embedded in homes.</strong> A home has many devices, device state changes constantly, and devices are queried on their own. Embedding them would make every state update rewrite the whole home document. <code>GET /homes/{id}</code> joins the two with <code>$lookup</code> when both are needed.</li>
+<li><strong>Deliberate duplication of <code>lastState</code>.</strong> Each device document carries a copy of its most recent reading. A dashboard can therefore show the current state of every device in a home with one indexed query instead of scanning events. This trades a small write cost for a large read saving, a typical document-store choice.</li>
+<li><strong>Denormalised <code>meta</code> on each event.</strong> Each event repeats its home, room and type alongside the device ID. Queries such as "all motion in home H005" then need no join, and all four fields help the time-series engine group and compress the data.</li>
+<li><strong>A link to the CRM rather than a copy of it.</strong> Only <code>customerRef</code> is stored. Names, emails and payment details stay in the relational CRM, which keeps personal data to a minimum in the new store (UK GDPR data minimisation) and avoids two copies drifting apart.</li>
+<li><strong>Validation where the structure is known.</strong> <code>homes</code>, <code>devices</code> and <code>alerts</code> have <code>$jsonSchema</code> validators (required fields, enumerated device types, value ranges, ID patterns). Payload rules for events are applied in the ingest service, because the rules depend on the device type.</li>
+</ol>
+<h3>4.6 MQTT ingest service</h3>
+<p>The ingest service (<code>src/ingest.js</code>) connects to the broker with its own credentials. It subscribes to <code>iothings/+/+/state</code> at <strong>QoS 1</strong> (at-least-once delivery) with a <strong>persistent session</strong>, so the broker queues messages while the service restarts. Devices publish JSON to <code>iothings/&lt;homeId&gt;/&lt;deviceId&gt;/state</code>, for example <code>{"state":"on","value":80}</code> for a light at 80% brightness.</p>
+<p>For each message the service:</p>
+<ol>
+<li><strong>Parses the topic.</strong> It rejects topics that do not match the pattern.</li>
+<li><strong>Looks up the device</strong> in <code>devices</code>, with a 60-second in-memory cache. It rejects unknown devices and devices that belong to a different home. This stops a compromised gateway from writing into another customer's data.</li>
+<li><strong>Validates the payload</strong> against the rules for the device type. For example, a door lock may only be <code>locked</code> or <code>unlocked</code>, a temperature must lie between −20 and 60 °C, and a battery level between 0 and 100.</li>
+<li><strong>Builds the event document</strong>, adding the device's home, room and type as <code>meta</code>.</li>
+<li><strong>Evaluates the safety rules:</strong>
+   - smoke detected produces a <strong>critical</strong> alert
+   - a door unlocked or opened during the owner's night hours produces a <strong>warning</strong>; night hours are evaluated in UK local time, so the rule stays correct across the change to British Summer Time
+   - a temperature of 35 °C or more, or 5 °C or less, produces a <strong>warning</strong></li>
+</ol>
+<p>Each alert is stored at once and published to <code>iothings/&lt;homeId&gt;/notifications</code>, so apps and gateways can notify the owner.
+6. <strong>Buffers the event</strong> and writes the buffer with one <code>insertMany</code> when it holds 500 events or every second, whichever comes first. It then updates each affected device's <code>lastState</code>.</p>
+<p>Batching turns thousands of small writes, each waiting for acknowledgement from two replicas, into a few large ones. This is the main reason for the throughput measured in section 4.10.</p>
+<pre><code>$ simulator.js --smoke H007
+published smoke event for H007-hallway-smoke-alarm
+notification received on iothings/H007/notifications {&quot;homeId&quot;:&quot;H007&quot;,
+  &quot;deviceId&quot;:&quot;H007-hallway-smoke-alarm&quot;,&quot;kind&quot;:&quot;smoke&quot;,&quot;severity&quot;:&quot;critical&quot;,
+  &quot;message&quot;:&quot;Smoke detected in hallway&quot;, ...}
+
+$ simulator.js --invalid          (ingest service log)
+ALERT critical Smoke detected in hallway H007
+rejected iothings/H001/H001-living-room-temperature/state value 999 outside -20..60
+rejected iothings/H001/H001-living-room-temperature/state invalid state &quot;banana&quot; for temperature
+rejected non-JSON message on iothings/H001/H001-living-room-temperature/state
+rejected message from unregistered device iothings/H001/UNKNOWN-DEVICE/state
+</code></pre>
+<p class="caption">Figure 7: Top: a smoke event travels from the device through the broker, ingest service and alert rules, and back to the home as a notification. Bottom: four deliberately invalid messages are all rejected and logged.</p>
+<h3>4.7 Test dataset</h3>
+<p>IoThings cannot share customer data because of UK GDPR, so a dataset was generated from a <strong>behavioural model</strong> (<code>src/behaviour.js</code>) instead of random values. The model simulates each home's daily routine in UK local time. Commuters, remote workers and shift workers wake, leave and return at different times, and weekends differ from weekdays. The model also covers:</p>
+<ul>
+<li>motion and lights following occupants from room to room</li>
+<li>a kettle and a TV on smart plugs</li>
+<li>blinds that open in the morning and close in the evening</li>
+<li>heating cycles, with room temperature responding to the thermostat</li>
+<li>humidity peaks after showers</li>
+<li>monthly smoke-alarm tests, occasional burnt dinners (smoke) and occasional late-night door use</li>
+</ul>
+<p>A seeded random-number generator makes the dataset <strong>exactly reproducible</strong>. Every generated message passes through the same validation and alert rules as live traffic.</p>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Homes</td>
+<td>20, in 8 UK cities; 9 commuter, 7 remote-worker and 4 shift-worker profiles</td>
+</tr>
+<tr>
+<td>Devices</td>
+<td>24 per home across 5 rooms; 480 in total; 11 types</td>
+</tr>
+<tr>
+<td>Period</td>
+<td>30 days (31 August to 29 September 2026)</td>
+</tr>
+<tr>
+<td>Events</td>
+<td>289,602 (0 rejected)</td>
+</tr>
+<tr>
+<td>Alerts raised</td>
+<td>64 (22 smoke, 21 night-time door opened, 21 night-time door unlocked)</td>
+</tr>
+</tbody>
+</table>
+<p>Because the ground truth is known, the dataset can also <strong>validate the analytics</strong>. Section 5.3 shows that the API recovers the behaviour that the model was given. Appendix A gives the full breakdown.</p>
+<h3>4.8 Data management: CRUD and queries</h3>
+<p><code>mongo/demo-queries.js</code> demonstrates the full data lifecycle as the <code>iothings_api</code> user.</p>
+<pre><code>==== CREATE - register a new home and a device ====
+{ homeId: 'H900', customerRef: 'CRM-19900', name: 'Demo home', ... }
+==== CREATE - schema validation rejects a bad document ====
+rejected: Document failed validation            &lt;- device type 'toaster' not allowed
+==== READ - latest 5 events for the H001 front door lock ====
+{ ts: ISODate('2026-09-29T22:19:37.198Z'), state: 'locked' }
+{ ts: ISODate('2026-09-28T21:45:26.387Z'), state: 'locked' }  ... (5 documents)
+==== UPDATE - change preferences and mark a device faulty ====
+{ acknowledged: true, matchedCount: 1, modifiedCount: 1 }   (x2)
+==== AGGREGATE - average living-room temperature by hour of day (UK time) ====
+06:00  15.8°C  #####
+07:00  16.7°C  ########          &lt;- heating starts before wake-up
+ ...
+21:00  20.1°C  ##################
+==== INDEX USAGE - explain() for a per-device time-range query ====
+indexes used: &quot;indexName&quot;:&quot;meta.deviceId_1_ts_-1&quot;
+==== DELETE - remove the demo home (GDPR erasure across collections) ====
+{ homes: 1, devices: 1, events: 1 }
+</code></pre>
+<p class="caption">Figure 8: A condensed CRUD, aggregation and index-usage demonstration. Schema validation blocks an invalid device, and <code>explain()</code> confirms the per-device query uses the compound index rather than a collection scan.</p>
+<h3>4.9 Distributed data management: failover test</h3>
+<p>The most important property of the three-member design is that it keeps working when a server fails. <code>scripts/failover-demo.sh</code> tests this in five steps:</p>
+<ol>
+<li>It kills the primary's container abruptly (<code>docker kill</code>, simulating a crash rather than a clean shutdown).</li>
+<li>It measures how long the survivors take to elect a new primary.</li>
+<li>It writes an event through the API while one member is down.</li>
+<li>It restarts the failed member.</li>
+<li>It observes that member rejoining and taking back the primary role.</li>
+</ol>
+<pre><code>1. Current replica set
+    mongo1:27017   PRIMARY                  health=1
+    mongo2:27018   SECONDARY                health=1
+    mongo3:27019   SECONDARY                health=1
+2. Simulating a crash of the primary: docker kill mongo1
+3. Waiting for the remaining members to elect a new primary
+    new primary mongo3:27019 elected after 16s
+    mongo1:27017   (not reachable/healthy)  health=0
+    mongo3:27019   PRIMARY                  health=1
+4. Writes still succeed with one node down (w: majority = 2 of 3)
+    POST /events -&gt; HTTP 201
+5. Restarting mongo1 - it rejoins as SECONDARY and catches up from the oplog
+    mongo1:27017   SECONDARY                health=1
+6. mongo1 has priority 2, so once it has caught up it is re-elected primary
+    mongo1:27017   PRIMARY                  health=1
+</code></pre>
+<p class="caption">Figure 9: Failover test output (one of five runs).</p>
+<p><strong>Table 7: Failover results over five runs</strong></p>
+<table>
+<thead>
+<tr>
+<th>Run</th>
+<th>1</th>
+<th>2</th>
+<th>3</th>
+<th>4</th>
+<th>5</th>
+<th>Mean</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Time to new primary (s)</td>
+<td>10</td>
+<td>16</td>
+<td>15</td>
+<td>10</td>
+<td>16</td>
+<td><strong>13.4</strong></td>
+</tr>
+<tr>
+<td>Write with one member down</td>
+<td>201</td>
+<td>201</td>
+<td>201</td>
+<td>201</td>
+<td>201</td>
+<td>5/5 succeeded</td>
+</tr>
+<tr>
+<td>Failed member rejoined and resynced</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>5/5</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Analysis:</strong></p>
+<ul>
+<li><strong>Where the time goes.</strong> The failover time is dominated by MongoDB's default election timeout of 10 seconds: the survivors must first decide the primary is really gone. The time also includes the script's one-second polling interval.</li>
+<li><strong>Tuning.</strong> Lowering <code>settings.electionTimeoutMillis</code> would shorten failover, at the risk of unnecessary elections on a congested network. That is a CAP/PACELC trade-off in practice.</li>
+<li><strong>No data loss.</strong> During the gap, the ingest service holds events in its buffer and retries, and QoS 1 with a persistent session means the broker keeps undelivered messages. Every write acknowledged with <code>w: majority</code> was already on the surviving majority, so no acknowledged data could be lost.</li>
+<li><strong>Recovery.</strong> When the failed member returned, it caught up from the new primary's oplog without manual intervention.</li>
+</ul>
+<h3>4.10 Performance evaluation and tuning</h3>
+<p>Two experiments were run to check that the design performs well and to find weaknesses before IoThings relies on it.</p>
+<h4>4.10.1 Time-series granularity</h4>
+<p>The first version of the schema used granularity <code>seconds</code>. With this setting, MongoDB closes a bucket after at most one hour. Most IoThings devices report only a few times an hour: temperature every 15 minutes, a door lock a few times a day. Measured storage statistics showed <strong>92,168 buckets holding on average about three events each</strong>. That is far too few for effective compression, and every bucket needs its own index entries. To quantify the effect, the same 289,602 events were copied into three time-series variants and a plain collection, each with identical indexes. The script is <code>mongo/benchmark-granularity.js</code>.</p>
+<p><strong>Table 8: Storage and query cost for the same 289,602 events</strong></p>
+<table>
+<thead>
+<tr>
+<th>Design</th>
+<th>Buckets</th>
+<th>Data (KB)</th>
+<th>Indexes (KB)</th>
+<th>Device/day query: units read, ms</th>
+<th>Home/day query: units read, ms</th>
+<th>7-day aggregation (ms)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Plain collection</td>
+<td>–</td>
+<td>9,468</td>
+<td>17,384</td>
+<td>96, 1.1</td>
+<td>474, 1.6</td>
+<td>2.6</td>
+</tr>
+<tr>
+<td>Time-series <code>seconds</code></td>
+<td>92,168</td>
+<td>5,576</td>
+<td>14,052</td>
+<td>24, 1.1</td>
+<td>157, 2.1</td>
+<td>1.8</td>
+</tr>
+<tr>
+<td><strong>Time-series <code>minutes</code></strong></td>
+<td><strong>11,480</strong></td>
+<td><strong>1,860</strong></td>
+<td><strong>1,852</strong></td>
+<td><strong>2, 0.8</strong></td>
+<td><strong>40, 1.8</strong></td>
+<td><strong>0.8</strong></td>
+</tr>
+<tr>
+<td>Time-series <code>hours</code></td>
+<td>635</td>
+<td>1,724</td>
+<td>244</td>
+<td>1, 0.8</td>
+<td>21, 2.9</td>
+<td>0.8</td>
+</tr>
+</tbody>
+</table>
+<p class="caption">"Units read" means buckets examined for time-series collections and documents examined for the plain collection.</p>
+<figure><img src="figures/chart-storage.png" alt=""><figcaption>Figure 5: Storage for the same events under four designs. The chosen 'minutes' granularity uses 3.6 MB against 26.2 MB for a plain collection.</figcaption></figure>
+<p><strong>Findings:</strong></p>
+<ul>
+<li><strong>Time-series beats a plain collection.</strong> It is 1.4× smaller with <code>seconds</code> and about 7× smaller with <code>minutes</code>.</li>
+<li><strong>Granularity matters more than the choice of time-series itself.</strong> Moving from <code>seconds</code> to <code>minutes</code> gives buckets of up to 24 hours per device. That cut buckets by 88% and total storage by 81%, and reduced the buckets read for a one-device, one-day query from 24 to 2.</li>
+<li><strong><code>hours</code> is not better despite being smallest.</strong> Its buckets can span up to 30 days, so a query for one day of a whole home must decompress much more data than it returns. The home/day query was the slowest of the time-series variants (2.9 ms), and the gap would widen with more data.</li>
+<li><strong>Query times are similar at this scale.</strong> They all sit between 0.8 and 2.9 ms, so storage and I/O efficiency, which grow with data volume, are the deciding factors.</li>
+</ul>
+<p><strong>Decision:</strong> the schema was changed to granularity <code>minutes</code>, the recommended setting for data arriving roughly once a minute or less often. On the <strong>live</strong> collection, which is built by thousands of incremental inserts rather than one bulk copy, the change reduced storage from <strong>131.2 MB (39.2 MB data + 95.1 MB indexes) to 5.8 MB (2.4 MB + 3.6 MB)</strong>, a 22-fold reduction. That is about 21 bytes per event including indexes.</p>
+<h4>4.10.2 Ingest throughput, and a defect found by testing</h4>
+<p><code>scripts/load-test.js</code> publishes a burst of <em>N</em> valid temperature readings as fast as possible. It then counts how many reach MongoDB, and how quickly, with majority write concern.</p>
+<p><strong>First run (broker at default settings):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Messages published</th>
+<th>Stored in MongoDB</th>
+<th>Loss</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>20,000</td>
+<td>1,446</td>
+<td>92.8%</td>
+</tr>
+<tr>
+<td>50,000</td>
+<td>5,619</td>
+<td>88.8%</td>
+</tr>
+</tbody>
+</table>
+<p>The ingest service had stored <strong>every</strong> message it received, so the loss was upstream. The broker log showed: <code>Outgoing messages are being dropped for client iothings-ingest-1</code>. By default, Mosquitto allows 20 unacknowledged messages in flight per client and queues at most 1,000 more. Anything beyond that is <strong>silently discarded</strong>. A burst of this kind is realistic, for example when many gateways reconnect after a network outage and flush their buffers. The broker was reconfigured with <code>max_inflight_messages 500</code> and <code>max_queued_messages 200000</code>, so bursts are queued rather than lost. A second, smaller defect was found in the load-test tool itself. MQTT packet identifiers are 16-bit, so one client cannot have more than 65,535 unacknowledged QoS 1 messages, and the tool now publishes in windows of 5,000.</p>
+<p><strong>After the fix:</strong></p>
+<p><strong>Table 9: End-to-end ingest throughput (publish → broker → validation → <code>insertMany</code>, <code>w: majority</code>)</strong></p>
+<table>
+<thead>
+<tr>
+<th>Burst size</th>
+<th>Stored</th>
+<th>Time (ms)</th>
+<th>Throughput (events/s)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>20,000</td>
+<td>20,000 (100%)</td>
+<td>869</td>
+<td>23,015</td>
+</tr>
+<tr>
+<td>50,000</td>
+<td>50,000 (100%)</td>
+<td>1,385</td>
+<td>36,101</td>
+</tr>
+<tr>
+<td>100,000</td>
+<td>100,000 (100%)</td>
+<td>2,110</td>
+<td><strong>47,393</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Throughput rises with burst size because fixed start-up costs are spread over more messages, and full 500-event batches become the norm.</p>
+<h4>4.10.3 Capacity estimate for IoThings</h4>
+<p>The simulated homes average about 483 events per day. For a customer base of <strong>10,000 homes</strong>, that would be 4.8 million events per day:</p>
+<ul>
+<li><strong>Throughput:</strong> about 56 events per second on average. The measured capacity is roughly 800 times that, which leaves ample headroom for peaks.</li>
+<li><strong>Storage:</strong> at the measured 21 bytes per event, about 100 MB per day, 37 GB per year, and 75 GB at the 2-year retention limit, per replica.</li>
+</ul>
+<p>These are <strong>estimates</strong>. Synthetic readings are more regular than real ones and compress better, and all three members shared one physical host during testing. They nonetheless show that IoThings' foreseeable volumes are well within the capacity of a single replica set. Sharding (section 6.2) is only needed at a much larger scale.</p>
+
+<h2 class="pb">5. API Implementation and Documentation</h2>
+<h3>5.1 Design</h3>
+<p>The API (<code>src/api/</code>) is a REST service built with Express. Its design follows these principles:</p>
+<ul>
+<li><strong>Resource-oriented and versioned:</strong> all endpoints sit under <code>/api/v1</code>, so a future <code>/api/v2</code> can change behaviour without breaking existing clients.</li>
+<li><strong>JSON everywhere:</strong> it accepts JSON bodies, returns JSON, and represents dates in ISO-8601.</li>
+<li><strong>Self-documenting:</strong> the full contract is written in OpenAPI 3.0 (<code>openapi.yaml</code>) and served as interactive Swagger UI at <code>/docs</code>, where developers can read the documentation and try every endpoint.</li>
+<li><strong>Secure by default:</strong> every <code>/api/v1</code> request needs the <code>x-api-key</code> header, and only <code>/health</code> and <code>/docs</code> are public. Writes accept only listed fields. MongoDB schema-validation errors are turned into helpful <code>400</code> responses, while unexpected errors are logged but hidden from clients.</li>
+<li><strong>Database-side processing:</strong> analytics are computed with MongoDB aggregation pipelines, including <code>$setWindowFields</code>, <code>$dateTrunc</code>, <code>$median</code>, <code>$lookup</code> and <code>$sortByCount</code>, so only small results cross the network.</li>
+</ul>
+<figure><img src="figures/swagger-overview.png" alt=""><figcaption>Figure 10: Swagger UI served by the API at /docs, generated from the OpenAPI 3.0 specification. Each endpoint can be expanded, authorised with the API key and executed from the browser.</figcaption></figure>
+<h3>5.2 Endpoints</h3>
+<p><strong>Table 10: API endpoints</strong></p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/health</code></td>
+<td>Liveness; reports the replica set name and current primary (public)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/cluster/status</code></td>
+<td>State, health and replication time of each replica-set member</td>
+</tr>
+<tr>
+<td>GET, POST</td>
+<td><code>/api/v1/homes</code></td>
+<td>List homes (filter by <code>city</code>, <code>customerRef</code>); register a home</td>
+</tr>
+<tr>
+<td>GET, PATCH, DELETE</td>
+<td><code>/api/v1/homes/{homeId}</code></td>
+<td>Read a home with its devices; update preferences; erase a home and all its data</td>
+</tr>
+<tr>
+<td>GET, POST</td>
+<td><code>/api/v1/devices</code></td>
+<td>List devices (filter by <code>homeId</code>, <code>type</code>, <code>room</code>, <code>status</code>); register a device</td>
+</tr>
+<tr>
+<td>GET, PATCH, DELETE</td>
+<td><code>/api/v1/devices/{deviceId}</code></td>
+<td>Read (with latest state), update, remove a device</td>
+</tr>
+<tr>
+<td>GET, POST</td>
+<td><code>/api/v1/events</code></td>
+<td>Query events by home/device/type/room and time range; submit an event over HTTP</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/alerts</code></td>
+<td>List alerts (filter by <code>homeId</code>, <code>kind</code>, <code>severity</code>, <code>acknowledged</code>)</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/alerts/{id}/acknowledge</code></td>
+<td>Acknowledge an alert</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/analytics/overview</code></td>
+<td>Estate-wide events per day and type, device status, alert totals</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/analytics/homes/{id}/usage</code></td>
+<td>Activations, hours switched on and smart-plug energy (kWh) per device</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/analytics/homes/{id}/activity-by-hour</code></td>
+<td>Motion by hour of day and room (occupancy pattern)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/analytics/homes/{id}/routine</code></td>
+<td>Predicted wake-up, leave and return times, for weekdays and weekends</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/analytics/homes/{id}/climate</code></td>
+<td>Daily average, minimum and maximum temperature and humidity per room</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/analytics/homes/{id}/recommendations</code></td>
+<td>Energy, comfort and safety advice for the owner</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Table 11: Response codes</strong></p>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+<th>Example tested</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200, 201, 204</td>
+<td>Success, created, deleted</td>
+<td>Full create → update → delete lifecycle for home H950</td>
+</tr>
+<tr>
+<td>400</td>
+<td>Invalid input or failed schema validation</td>
+<td><code>{"error":"value 999 outside -20..60"}</code></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Missing or wrong API key</td>
+<td><code>{"error":"missing or invalid x-api-key header"}</code></td>
+</tr>
+<tr>
+<td>404</td>
+<td>Unknown resource</td>
+<td>Unknown <code>homeId</code></td>
+</tr>
+<tr>
+<td>409</td>
+<td>Duplicate identifier</td>
+<td><code>{"error":"duplicate key","details":{"homeId":"H001"}}</code></td>
+</tr>
+<tr>
+<td>503</td>
+<td>Database unavailable</td>
+<td>Returned by <code>/health</code> if no primary can be reached</td>
+</tr>
+</tbody>
+</table>
+<h3>5.3 Turning data into feedback</h3>
+<p>The analytics endpoints address IoThings' three business goals directly.</p>
+<p><strong>Prediction: <code>routine</code>.</strong> For each day, this endpoint finds the first motion after 04:00 (wake-up) and the first and last front-door openings (leave and return). It then takes the <strong>median</strong> over 28 days, separately for weekdays and weekends. The median is robust to an occasional late night or day off.</p>
+<p><strong>Validation against ground truth.</strong> Home H005 was generated as a commuter who wakes between 06:15 and 07:30, leaves 50–80 minutes later, and returns between 17:00 and 18:30. The API predicted a weekday wake-up at <strong>06:53</strong>, leaving at <strong>08:07</strong> and returning at <strong>17:52</strong>, all inside the generated ranges. For weekends it correctly predicted a later wake-up (<strong>08:28</strong>). The analytics therefore recover the real pattern in the data, the property that a heating schedule or security feature would rely on.</p>
+<p><strong>Recommendation: <code>usage</code> and <code>recommendations</code>.</strong> <code>usage</code> pairs each event with the next event from the same device, using the <code>$shift</code> window operator. This gives how long each light or heater stayed on, and turns smart-plug wattage into kilowatt-hours. <code>recommendations</code> applies simple, explainable rules to those results, such as lights on for more than 4 hours a day, rooms above the owner's preferred temperature, heating for more than 8 hours a day, low batteries and unacknowledged alerts.</p>
+<p><strong>Safety: <code>alerts</code> and the notifications topic.</strong> Alerts are raised as soon as the triggering message is processed, before the event itself is batched (Figure 7). They stay unacknowledged until the owner or a monitoring centre confirms them.</p>
+<pre><code>GET /api/v1/analytics/homes/H005/routine
+{&quot;homeId&quot;:&quot;H005&quot;,&quot;basedOn&quot;:&quot;median of the last 28 days&quot;,
+ &quot;predicted&quot;:{&quot;weekday&quot;:{&quot;days&quot;:20,&quot;wakeUp&quot;:&quot;06:53&quot;,&quot;leave&quot;:&quot;08:07&quot;,&quot;return&quot;:&quot;17:52&quot;},
+              &quot;weekend&quot;:{&quot;days&quot;:8,&quot;wakeUp&quot;:&quot;08:28&quot;,&quot;leave&quot;:&quot;13:51&quot;,&quot;return&quot;:&quot;14:41&quot;}}}
+
+GET /api/v1/analytics/homes/H005/usage          (totals, last 7 days)
+{&quot;activations&quot;:444,&quot;lightHoursPerDay&quot;:5,&quot;heatingHoursPerDay&quot;:9,&quot;kWh&quot;:3.68}
+
+GET /api/v1/analytics/homes/H003/recommendations
+[{&quot;category&quot;:&quot;comfort&quot;,&quot;room&quot;:&quot;living_room&quot;,&quot;message&quot;:&quot;living_room peaked at 22°C, above
+   your 19°C preference - lower the thermostat setpoint or close blinds on sunny days&quot;},
+ {&quot;category&quot;:&quot;energy&quot;,&quot;message&quot;:&quot;Heating runs 13.5 h/day - a 1°C lower setpoint saves
+   roughly 10% on heating&quot;},
+ {&quot;category&quot;:&quot;energy&quot;,&quot;message&quot;:&quot;Smart plugs used 4.1 kWh in this period&quot;},
+ {&quot;category&quot;:&quot;safety&quot;,&quot;message&quot;:&quot;5 unacknowledged safety alert(s)&quot;}]
+
+GET /api/v1/homes            (no API key)   -&gt; 401 {&quot;error&quot;:&quot;missing or invalid x-api-key header&quot;}
+POST /api/v1/homes {&quot;homeId&quot;:&quot;H001&quot;,...}    -&gt; 409 {&quot;error&quot;:&quot;duplicate key&quot;,&quot;details&quot;:{&quot;homeId&quot;:&quot;H001&quot;}}
+</code></pre>
+<p class="caption">Figure 11: Example API responses captured from the running system.</p>
+<figure><img src="figures/chart-activity.png" alt=""><figcaption>Figure 12: Occupancy pattern for home H005 returned by the activity-by-hour endpoint. The morning routine, the empty house during working hours and the evening peak are clearly visible.</figcaption></figure>
+<p><strong>Response times.</strong> Measured on the running system:</p>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Response time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Home <code>usage</code></td>
+<td>3.5 ms</td>
+</tr>
+<tr>
+<td><code>events</code> (100 events)</td>
+<td>6.8 ms</td>
+</tr>
+<tr>
+<td><code>routine</code> (28 days)</td>
+<td>11.8 ms</td>
+</tr>
+<tr>
+<td>Estate-wide <code>overview</code></td>
+<td>224 ms</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>overview</code> endpoint scans a week of events for every home. At a larger scale it should be served from a pre-aggregated summary collection, refreshed periodically, rather than computed on each request.</p>
+
+<h2 class="pb">6. Summary and Conclusion</h2>
+<p>This project delivered a working NoSQL sensor platform that meets every requirement in the brief:</p>
+<ul>
+<li><strong>Three-member MongoDB replica set:</strong> survived five abrupt primary failures, electing a new primary in 13.4 seconds on average without losing any acknowledged write.</li>
+<li><strong>Layered security:</strong> keyfile authentication, least-privilege users, an authenticated MQTT broker, validated messages and an API key.</li>
+<li><strong>Schema design:</strong> optimised by experiment to store sensor events in 21 bytes each.</li>
+<li><strong>Node.js ingest service:</strong> stored more than 47,000 events per second in testing.</li>
+<li><strong>REST API:</strong> documented and turns raw activations into predictions, recommendations and safety alerts.</li>
+</ul>
+<p>The critical comparison in section 3 concluded that relational and document databases are complementary. <strong>IoThings should invest in the NoSQL sensor store</strong> for these reasons:</p>
+<ol>
+<li><strong>It fits the data.</strong> Sensor messages are already JSON documents with varied structures. New device types can be added without schema migrations, while validation still protects data quality.</li>
+<li><strong>It is resilient.</strong> The replica set removes the single point of failure that a lone database server would be, directly addressing the company's concern about its data.</li>
+<li><strong>It is economical.</strong> Time-series compression cut storage 22-fold compared with the untuned design, and one modest cluster covers the estimated needs of 10,000 homes.</li>
+<li><strong>It creates value.</strong> The same data powers customer-facing features: routine prediction, energy and comfort advice, and instant safety alerts. These can differentiate IoThings' product and support marketing.</li>
+<li><strong>It protects existing investment.</strong> The ERP, CRM and financial systems stay relational and untouched, linked by a customer reference.</li>
+</ol>
+<h3>6.1 Limitations</h3>
+<ul>
+<li><strong>One host.</strong> All three replica-set members ran on one machine. The failover test proves the software behaviour, but not protection against hardware, power or site failure. In production, each member must run on a separate server, ideally in separate availability zones or data centres.</li>
+<li><strong>Synthetic data.</strong> Real sensor data is noisier, so compression ratios and prediction accuracy should be re-measured on a consented pilot group.</li>
+<li><strong>No encryption yet.</strong> Neither TLS in transit nor encryption at rest has been enabled (section 4.4).</li>
+<li><strong>One shared API key.</strong> It identifies an application, not a customer, so any key-holder can read any home.</li>
+<li><strong>Possible duplicates after a failed batch.</strong> If a batch insert fails part-way, the ingest service re-queues the whole batch, which can produce duplicate events. An idempotency key per message would prevent this.</li>
+<li><strong>Simple analytics.</strong> The prediction is a robust statistic (the median), not a learned model.</li>
+</ul>
+<h3>6.2 Future work</h3>
+<ol>
+<li><strong>Customer front end.</strong> A web and mobile dashboard built on the existing <code>/analytics</code> endpoints, visualising each home's usage, routine, climate and alerts, with push notifications driven by the MQTT notifications topic.</li>
+<li><strong>Transport and storage security.</strong> TLS for MongoDB, MQTT over TLS (port 8883) and HTTPS for the API; encryption at rest; client-side field-level encryption for any sensitive fields.</li>
+<li><strong>Per-customer authentication.</strong> OAuth 2.0 / OpenID Connect tokens scoped to a customer's own homes, with per-device MQTT credentials or certificates and topic-level access control lists in the broker.</li>
+<li><strong>Production topology and operations.</strong> Members on separate hosts or zones; automated backups with point-in-time recovery; monitoring and alerting (for example Prometheus and Grafana) for replication lag, elections and ingest rates.</li>
+<li><strong>Scaling.</strong> Pre-aggregated daily summaries for estate-wide dashboards and, beyond a single replica set, sharding <code>sensor_events</code> on <code>meta.homeId</code>, so that each home's data stays together.</li>
+<li><strong>Machine learning.</strong> Models trained on the stored events for activity prediction, anomaly detection (for example an elderly occupant not moving in the morning) and predictive maintenance (battery and device failure).</li>
+<li><strong>Integration.</strong> Linking sensor insights with the CRM for customer support, and with the order-processing system for automatic replacement of failing devices.</li>
+</ol>
+
+<h2 class="pb">7. References</h2><div class="refs">
+<p>Abadi, D. (2012) 'Consistency tradeoffs in modern distributed database system design: CAP is only part of the story', <em>Computer</em>, 45(2), pp. 37–42.</p>
+<p>Angles, R. and Gutierrez, C. (2008) 'Survey of graph database models', <em>ACM Computing Surveys</em>, 40(1), pp. 1–39.</p>
+<p>Brewer, E. (2012) 'CAP twelve years later: how the "rules" have changed', <em>Computer</em>, 45(2), pp. 23–29.</p>
+<p>Cattell, R. (2011) 'Scalable SQL and NoSQL data stores', <em>ACM SIGMOD Record</em>, 39(4), pp. 12–27.</p>
+<p>Chang, F., Dean, J., Ghemawat, S., Hsieh, W.C., Wallach, D.A., Burrows, M., Chandra, T., Fikes, A. and Gruber, R.E. (2006) 'Bigtable: a distributed storage system for structured data', in <em>Proceedings of the 7th USENIX Symposium on Operating Systems Design and Implementation (OSDI '06)</em>. Seattle, WA: USENIX, pp. 205–218.</p>
+<p>Codd, E.F. (1970) 'A relational model of data for large shared data banks', <em>Communications of the ACM</em>, 13(6), pp. 377–387.</p>
+<p>DeCandia, G., Hastorun, D., Jampani, M., Kakulapati, G., Lakshman, A., Pilchin, A., Sivasubramanian, S., Vosshall, P. and Vogels, W. (2007) 'Dynamo: Amazon's highly available key-value store', in <em>Proceedings of the 21st ACM Symposium on Operating Systems Principles (SOSP '07)</em>. New York: ACM, pp. 205–220.</p>
+<p>Eclipse Foundation (n.d.) <em>mosquitto.conf – the configuration file for Mosquitto</em>. Available at: https://mosquitto.org/man/mosquitto-conf-5.html (Accessed: 30 September 2026).</p>
+<p>Fowler, M. (2011) <em>PolyglotPersistence</em>. Available at: https://martinfowler.com/bliki/PolyglotPersistence.html (Accessed: 30 September 2026).</p>
+<p>Gilbert, S. and Lynch, N. (2002) 'Brewer's conjecture and the feasibility of consistent, available, partition-tolerant web services', <em>ACM SIGACT News</em>, 33(2), pp. 51–59.</p>
+<p>Haerder, T. and Reuter, A. (1983) 'Principles of transaction-oriented database recovery', <em>ACM Computing Surveys</em>, 15(4), pp. 287–317.</p>
+<p>ICO (Information Commissioner's Office) (2023) <em>Guide to the UK General Data Protection Regulation (UK GDPR): the principles</em>. Available at: https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/data-protection-principles/ (Accessed: 30 September 2026).</p>
+<p>Lakshman, A. and Malik, P. (2010) 'Cassandra: a decentralized structured storage system', <em>ACM SIGOPS Operating Systems Review</em>, 44(2), pp. 35–40.</p>
+<p>MongoDB Inc. (n.d.) <em>MongoDB Manual: Replication; Time Series Collections; Schema Validation; Write Concern; Role-Based Access Control</em>. Available at: https://www.mongodb.com/docs/manual/ (Accessed: 30 September 2026).</p>
+<p>OASIS (2014) <em>MQTT Version 3.1.1</em>. OASIS Standard. Edited by A. Banks and R. Gupta. Available at: https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/mqtt-v3.1.1.html (Accessed: 30 September 2026).</p>
+<p>Ongaro, D. and Ousterhout, J. (2014) 'In search of an understandable consensus algorithm', in <em>Proceedings of the 2014 USENIX Annual Technical Conference (USENIX ATC '14)</em>. Philadelphia, PA: USENIX, pp. 305–319.</p>
+<p>OpenAPI Initiative (2017) <em>OpenAPI Specification, Version 3.0.0</em>. Available at: https://spec.openapis.org/oas/v3.0.0 (Accessed: 30 September 2026).</p>
+<p>Pritchett, D. (2008) 'BASE: an ACID alternative', <em>ACM Queue</em>, 6(3), pp. 48–55.</p>
+<p>Robinson, I., Webber, J. and Eifrem, E. (2015) <em>Graph Databases</em>. 2nd edn. Sebastopol, CA: O'Reilly Media.</p>
+<p>Sadalage, P.J. and Fowler, M. (2012) <em>NoSQL Distilled: A Brief Guide to the Emerging World of Polyglot Persistence</em>. Upper Saddle River, NJ: Addison-Wesley.</p>
+<p>Stonebraker, M. (2010) 'SQL databases v. NoSQL databases', <em>Communications of the ACM</em>, 53(4), pp. 10–11.</p>
+<p>Zhou, S., Mu, S., Wu, Y. et al. (2021) 'Fault-tolerant replication with pull-based consensus in MongoDB', in <em>Proceedings of the 18th USENIX Symposium on Networked Systems Design and Implementation (NSDI '21)</em>. USENIX, pp. 687–703.</p>
+
+</div><h2 class="pb">Appendix A: Dataset Used for Testing</h2>
+<h3>A.1 Source and method</h3>
+<ul>
+<li><strong>Source.</strong> The data is synthetic, generated by <code>scripts/seed.js</code> from the behavioural model in <code>src/behaviour.js</code>. Real IoThings data could not be used because of UK GDPR.</li>
+<li><strong>Reproducibility.</strong> A seeded pseudo-random generator (mulberry32) seeded by home and date makes the dataset identical on every run. Command: <code>node scripts/seed.js --homes 20 --days 30 --reset --export</code>.</li>
+<li><strong>Validation.</strong> Every generated message passes through the same validation (<code>validatePayload</code>) and alert rules (<code>detectAlert</code>) as live MQTT traffic. None was rejected.</li>
+</ul>
+<h3>A.2 Composition</h3>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Homes</td>
+<td>20: H001–H020</td>
+</tr>
+<tr>
+<td>Cities</td>
+<td>Bristol, Coventry, Leicester, Liverpool, London, Manchester, Nottingham, Sheffield</td>
+</tr>
+<tr>
+<td>Occupant profiles</td>
+<td>Commuter 9, remote worker 7, shift worker 4</td>
+</tr>
+<tr>
+<td>Rooms per home</td>
+<td>Hallway, living room, kitchen, bedroom, bathroom</td>
+</tr>
+<tr>
+<td>Devices</td>
+<td>480 (24 per home), 11 types</td>
+</tr>
+<tr>
+<td>Period</td>
+<td>31 August – 29 September 2026 (30 days)</td>
+</tr>
+<tr>
+<td>Events</td>
+<td>289,602</td>
+</tr>
+<tr>
+<td>Alerts</td>
+<td>64</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Event type</th>
+<th>Count</th>
+<th>Event type</th>
+<th>Count</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>temperature</td>
+<td>172,800</td>
+<td>door_lock</td>
+<td>2,386</td>
+</tr>
+<tr>
+<td>humidity</td>
+<td>57,600</td>
+<td>door_contact</td>
+<td>1,786</td>
+</tr>
+<tr>
+<td>motion</td>
+<td>41,116</td>
+<td>thermostat</td>
+<td>1,596</td>
+</tr>
+<tr>
+<td>light</td>
+<td>7,408</td>
+<td>smoke_alarm</td>
+<td>111</td>
+</tr>
+<tr>
+<td>blind</td>
+<td>2,400</td>
+<td>smart_plug</td>
+<td>2,400</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Alert kind</th>
+<th>Severity</th>
+<th>Count</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>smoke (burnt dinners)</td>
+<td>critical</td>
+<td>22</td>
+</tr>
+<tr>
+<td>intrusion (door opened at night)</td>
+<td>warning</td>
+<td>21</td>
+</tr>
+<tr>
+<td>door_unlocked (at night)</td>
+<td>warning</td>
+<td>21</td>
+</tr>
+</tbody>
+</table>
+<h3>A.3 Behaviour simulated</h3>
+<table>
+<thead>
+<tr>
+<th>Behaviour</th>
+<th>Model</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Wake-up</td>
+<td>Weekdays 06:15–07:30 (commuter/remote) or 10:00–11:30 (shift); weekends 08:00–09:30</td>
+</tr>
+<tr>
+<td>Morning routine</td>
+<td>Bedroom → bathroom → kitchen motion; lights if dark; kettle on a smart plug; blinds open</td>
+</tr>
+<tr>
+<td>Commute</td>
+<td>Door unlock → open → close → lock; heating to 16 °C; return 17:00–18:30</td>
+</tr>
+<tr>
+<td>At-home days</td>
+<td>Living-room activity; 60% chance of an afternoon walk</td>
+</tr>
+<tr>
+<td>Evening</td>
+<td>Cooking; TV on a smart plug; blinds close; heating off; bathroom; bed 22:30–23:40</td>
+</tr>
+<tr>
+<td>Climate</td>
+<td>Temperature every 15 min in 3 rooms, following the thermostat; humidity every 30 min, with shower peaks</td>
+</tr>
+<tr>
+<td>Safety events</td>
+<td>Smoke-alarm test on the 1st of each month; 3% chance of a burnt dinner; 4% chance of late-night door use</td>
+</tr>
+</tbody>
+</table>
+<h3>A.4 Sample files (in <code>iothings/data/</code>)</h3>
+<ul>
+<li><code>sample-homes.json</code> and <code>sample-devices.json</code>: the first two homes and their 48 devices</li>
+<li><code>sample-sensor-events-one-day.csv</code>: one day of events for H001. First rows:</li>
+</ul>
+<pre><code>ts,homeId,deviceId,type,room,state,value,unit
+2026-08-30T23:00:05.895Z,H001,H001-kitchen-temperature,temperature,kitchen,,16.4,°C
+2026-08-30T23:00:08.704Z,H001,H001-bedroom-temperature,temperature,bedroom,,15.3,°C
+2026-08-30T23:00:27.227Z,H001,H001-bathroom-humidity,humidity,bathroom,,52,%
+2026-08-30T23:00:40.861Z,H001,H001-living-room-temperature,temperature,living_room,,16.1,°C
+</code></pre>
+<p>(Timestamps are in UTC. 23:00 UTC on 30 August is midnight UK time on 31 August.)</p>
+<ul>
+<li><code>dataset-summary.json</code>: totals and the date range</li>
+</ul>
+<h2>Appendix B: Test Data and Procedures</h2>
+<table>
+<thead>
+<tr>
+<th>Test</th>
+<th>Data and procedure</th>
+<th>Expected result</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CRUD in the shell</td>
+<td><code>mongo/demo-queries.js</code>: creates home H900 and device H900-kitchen-smoke-alarm, one event; reads, updates, aggregates; deletes all three</td>
+<td>All operations succeed; invalid device rejected; index used</td>
+<td>Pass (Figure 8)</td>
+</tr>
+<tr>
+<td>CRUD through the API</td>
+<td>Home H950 and device H950-kitchen-light: POST → POST event → PATCH → DELETE</td>
+<td>201, 201, 200, 200 with deletion counts</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>Schema validation</td>
+<td>Device of type <code>toaster</code>; home with ID <code>bad</code> and no postcode</td>
+<td>Rejected by the validator</td>
+<td>Pass (400 with details)</td>
+</tr>
+<tr>
+<td>API error handling</td>
+<td>No key; duplicate <code>homeId</code>; value 999; events query without a filter</td>
+<td>401, 409, 400, 400</td>
+<td>Pass (Figure 11)</td>
+</tr>
+<tr>
+<td>RBAC</td>
+<td><code>iothings_analyst</code> reads homes, then attempts <code>deleteMany</code></td>
+<td>Read allowed, delete refused</td>
+<td>Pass (Figure 6)</td>
+</tr>
+<tr>
+<td>MQTT validation</td>
+<td>Value 999; state "banana"; unknown device; non-JSON text</td>
+<td>All 4 rejected and logged</td>
+<td>Pass (Figure 7)</td>
+</tr>
+<tr>
+<td>Safety alert</td>
+<td>Smoke event for H007</td>
+<td>Critical alert stored and notification published</td>
+<td>Pass (Figure 7)</td>
+</tr>
+<tr>
+<td>Failover</td>
+<td><code>docker kill</code> on the primary; write during the outage; restart</td>
+<td>New primary; write accepted; member rejoins</td>
+<td>Pass, 5/5 runs (Table 7)</td>
+</tr>
+<tr>
+<td>Granularity benchmark</td>
+<td>Same 289,602 events in 4 designs, identical indexes</td>
+<td>Compare storage and query cost</td>
+<td>Table 8</td>
+</tr>
+<tr>
+<td>Load test</td>
+<td>Bursts of 20k, 50k and 100k temperature readings, then cleaned up</td>
+<td>All stored</td>
+<td>Failed at defaults (up to 93% loss); pass after the broker fix (Table 9)</td>
+</tr>
+</tbody>
+</table>
+<h2>Appendix C: Unit Tests</h2>
+<p><code>npm test</code> runs five tests with Node's built-in test runner:</p>
+<pre><code>✔ parses state topics
+✔ validates payloads per device type
+✔ night hours use UK local time
+✔ raises alerts for safety events
+✔ generated dataset is deterministic and valid
+ℹ tests 5   ℹ pass 5   ℹ fail 0
+</code></pre>
+<p>The night-hours test checks that 22:30 UTC counts as night in July (23:30 BST) but not in January (22:30 GMT). This guards against a bug that would otherwise appear twice a year when the clocks change.</p>
+<h2>Appendix D: Reproducing the Results</h2>
+<pre><code class="language-bash">cd iothings
+./scripts/setup.sh                                          # install and configure everything
+docker compose run --rm --user &quot;$(id -u):$(id -g)&quot; api \
+    node scripts/seed.js --reset --export                   # dataset (Appendix A)
+scripts/mongosh.sh admin                                    # rs.conf(), rs.status()   (Figure 2)
+scripts/mongosh.sh api mongo/demo-queries.js                # CRUD demo                (Figure 8)
+scripts/mongosh.sh analyst mongo/demo-rbac.js               # RBAC test                (Figure 6)
+scripts/failover-demo.sh                                    # failover                 (Figure 9)
+scripts/mongosh.sh admin mongo/benchmark-granularity.js     # storage benchmark        (Table 8)
+docker compose --profile sim run --rm simulator node scripts/load-test.js --messages 100000
+docker compose --profile sim run --rm simulator node src/simulator.js --smoke H007
+open http://localhost:4000/docs                             # API documentation        (Figure 10)
+</code></pre></body></html>

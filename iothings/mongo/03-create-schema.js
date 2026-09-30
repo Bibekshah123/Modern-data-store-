@@ -74,9 +74,10 @@ ensureCollection('devices', {
 });
 
 // sensor_events: time-series collection holding every MQTT activation message.
-// Data expires after two years (UK GDPR storage limitation).
+// Data expires after two years (UK GDPR storage limitation). 'minutes' granularity (buckets of
+// up to 24 h per device) was chosen by measurement - see mongo/benchmark-granularity.js.
 ensureCollection('sensor_events', {
-  timeseries: { timeField: 'ts', metaField: 'meta', granularity: 'seconds' },
+  timeseries: { timeField: 'ts', metaField: 'meta', granularity: 'minutes' },
   expireAfterSeconds: 60 * 60 * 24 * 730,
 });
 
