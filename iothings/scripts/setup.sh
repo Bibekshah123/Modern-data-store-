@@ -68,8 +68,8 @@ docker exec "${MONGO_ENV[@]}" mongo1 mongosh --quiet --port 27017 --file /script
 echo "==> Creating collections, validators and indexes"
 docker exec "${MONGO_ENV[@]}" mongo1 mongosh --quiet --port 27017 --file /scripts/03-create-schema.js
 
-echo "==> Building and starting ingest service and API"
-docker compose up -d --build ingest api
+echo "==> Building and starting ingest service, smart devices and API"
+docker compose up -d --build ingest smart-devices api
 
 echo
 echo "Done. API:  http://localhost:${API_PORT}/docs   (x-api-key: see API_KEY in .env)"

@@ -11,6 +11,9 @@ import eventsRouter from './routes/events.js';
 import alertsRouter from './routes/alerts.js';
 import analyticsRouter from './routes/analytics.js';
 import clusterRouter from './routes/cluster.js';
+import simulateRouter from './routes/simulate.js';
+import roomsRouter from './routes/rooms.js';
+import { closeMqtt } from './mqtt.js';
 
 const db = await connect();
 const app = express();
@@ -38,6 +41,8 @@ api.use('/events', eventsRouter(db));
 api.use('/alerts', alertsRouter(db));
 api.use('/analytics', analyticsRouter(db));
 api.use('/cluster', clusterRouter(db));
+api.use('/simulate', simulateRouter(db));
+api.use('/rooms', roomsRouter(db));
 app.use('/api/v1', api);
 
 app.use(notFound);
@@ -47,6 +52,7 @@ const server = app.listen(config.apiPort, () => console.log(`IoThings API listen
 
 async function shutdown() {
   server.close();
+  await closeMqtt();
   await close();
   process.exit(0);
 }

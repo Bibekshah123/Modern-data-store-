@@ -3,7 +3,8 @@
 import mqtt from 'mqtt';
 import { config } from './config.js';
 import { connect, close } from './db.js';
-import { detectAlert, notificationTopic, parseStateTopic, toEvent, validatePayload } from './devices.js';
+import { commandTopic, detectAlert, notificationTopic, parseStateTopic, toEvent, validatePayload } from './devices.js';
+import { doorOpenedAlert, doorOpensLights } from './automations.js';
 
 const log = (...args) => console.log(new Date().toISOString(), ...args);
 
@@ -24,8 +25,13 @@ async function cached(key, load) {
   return value;
 }
 
-const stats = { received: 0, stored: 0, rejected: 0, alerts: 0 };
+const stats = { received: 0, stored: 0, rejected: 0, alerts: 0, automations: 0 };
 let buffer = [];
+
+// The fields a device reported, without empty ones (a light has no battery, a blind no state).
+function latestState(e) {
+  return Object.fromEntries(['state', 'value', 'battery'].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
+}
 
 async function flush() {
   if (buffer.length === 0) return;
@@ -43,7 +49,7 @@ async function flush() {
       [...latest.values()].map((e) => ({
         updateOne: {
           filter: { deviceId: e.meta.deviceId, $or: [{ lastSeen: { $lt: e.ts } }, { lastSeen: { $exists: false } }] },
-          update: { $set: { lastSeen: e.ts, lastState: { state: e.state, value: e.value, battery: e.battery } } },
+          update: { $set: { lastSeen: e.ts, lastState: latestState(e) } },
         },
       })),
       { ordered: false },
@@ -57,7 +63,7 @@ async function flush() {
 
 const client = mqtt.connect(config.mqttUrl, {
   ...config.mqttIngest,
-  clientId: `iothings-ingest-${process.pid}`,
+  clientId: 'iothings-ingest', // fixed id so the broker keeps this session's queued messages
   clean: false, // persistent session: the broker queues QoS 1 messages while we are down
 });
 
@@ -95,12 +101,27 @@ client.on('message', async (topic, raw) => {
   buffer.push(event);
 
   const home = await cached(`h:${device.homeId}`, () => homes.findOne({ homeId: device.homeId }));
-  const alert = detectAlert(event, home);
+  const alert = detectAlert(event, home) ?? doorOpenedAlert(event);
   if (alert) {
     stats.alerts++;
     await alerts.insertOne(alert);
     client.publish(notificationTopic(alert.homeId), JSON.stringify(alert), { qos: 1 });
     log('ALERT', alert.severity, alert.message, alert.homeId);
+  }
+
+  // Automation: a door opening switches on the lights in the same room.
+  // The light confirms by publishing its new state, which is stored like any other event.
+  if (event.meta.type === 'door_contact') {
+    const roomDevices = await devices.find({ homeId: device.homeId, room: device.room }).toArray();
+    for (const cmd of doorOpensLights(event, roomDevices)) {
+      stats.automations++;
+      client.publish(
+        commandTopic(cmd.homeId, cmd.deviceId),
+        JSON.stringify({ ...cmd.payload, reason: cmd.reason, ts: new Date().toISOString() }),
+        { qos: 1 },
+      );
+      log('AUTOMATION', cmd.reason, '-> switch on', cmd.deviceId);
+    }
   }
 
   if (buffer.length >= config.batchSize) await flush();

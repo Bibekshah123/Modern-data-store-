@@ -192,25 +192,20 @@ Measured results:
 
 | Method | Path | Purpose |
 |---|---|---|
+| POST | `/api/v1/simulate/door` | A person opens a door: alert raised and light switched on |
+| GET | `/api/v1/rooms/{homeId}/{room}` | Door state, light state and latest door alerts |
+| GET | `/api/v1/alerts` | List alerts (e.g. kind `door_opened`) |
+| GET | `/api/v1/homes` | List homes |
+| GET | `/api/v1/homes/{homeId}` | One home with its devices (`$lookup`) |
+| GET | `/api/v1/devices` | List devices |
+| GET | `/api/v1/events` | Query stored sensor readings |
+| GET | `/api/v1/analytics/homes/{id}/routine` | Predicted wake, leave and return times (`$median`) |
 | GET | `/health` | Status and current primary |
 | GET | `/api/v1/cluster/status` | Replica set member states |
-| GET, POST | `/api/v1/homes` | List or create homes |
-| GET, PATCH, DELETE | `/api/v1/homes/{homeId}` | Read (with devices), update, erase a home |
-| GET, POST | `/api/v1/devices` | List or register devices |
-| GET, PATCH, DELETE | `/api/v1/devices/{deviceId}` | Read, update, remove a device |
-| GET, POST | `/api/v1/events` | Query or submit events |
-| GET | `/api/v1/alerts` | List alerts |
-| POST | `/api/v1/alerts/{id}/acknowledge` | Acknowledge an alert |
-| GET | `/api/v1/analytics/overview` | Estate-wide totals |
-| GET | `/api/v1/analytics/homes/{id}/usage` | Activations, hours on, kWh per device |
-| GET | `/api/v1/analytics/homes/{id}/activity-by-hour` | Occupancy pattern |
-| GET | `/api/v1/analytics/homes/{id}/routine` | Predicted wake, leave and return times (`$median`) |
-| GET | `/api/v1/analytics/homes/{id}/climate` | Daily temperature and humidity per room |
-| GET | `/api/v1/analytics/homes/{id}/recommendations` | Energy, comfort and safety tips |
 
 **Figure 20:** _Swagger UI overview_
 **Figure 21:** _`routine` response for H005 (weekday leave 08:07, return 17:50)_
-**Figure 22:** _`recommendations` response_
+**Figure 22:** _`simulate/door` response: alert raised and light switched on_
 **Figure 23:** _`401` response without an API key_
 
 ---

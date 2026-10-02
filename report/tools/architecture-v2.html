@@ -1,0 +1,74 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;background:#fff;font-family:Arial,Helvetica,sans-serif}
+svg text{font-family:Arial,Helvetica,sans-serif}
+</style></head><body>
+<svg width="1200" height="620" viewBox="0 0 1200 620" xmlns="http://www.w3.org/2000/svg">
+<defs>
+ <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#37474f"/></marker>
+ <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c62828"/></marker>
+</defs>
+<rect x="0" y="0" width="1200" height="620" fill="#fff"/>
+<!-- Home -->
+<rect x="20" y="40" width="220" height="330" rx="10" fill="#f1f8e9" stroke="#689f38" stroke-width="2"/>
+<text x="130" y="68" text-anchor="middle" font-size="18" font-weight="bold" fill="#33691e">Customer home</text>
+<g font-size="14" fill="#263238">
+<rect x="40" y="85" width="180" height="30" rx="5" fill="#fff" stroke="#9ccc65"/><text x="130" y="105" text-anchor="middle">Door lock / contact</text>
+<rect x="40" y="122" width="180" height="30" rx="5" fill="#fff" stroke="#9ccc65"/><text x="130" y="142" text-anchor="middle">Lights / blinds</text>
+<rect x="40" y="159" width="180" height="30" rx="5" fill="#fff" stroke="#9ccc65"/><text x="130" y="179" text-anchor="middle" font-size="13">Thermostat · temp · humidity</text>
+<rect x="40" y="196" width="180" height="30" rx="5" fill="#fff" stroke="#9ccc65"/><text x="130" y="216" text-anchor="middle">Motion sensors</text>
+<rect x="40" y="233" width="180" height="30" rx="5" fill="#fff" stroke="#9ccc65"/><text x="130" y="253" text-anchor="middle">Smoke alarms / smart plugs</text>
+<rect x="40" y="290" width="180" height="60" rx="5" fill="#dcedc8" stroke="#689f38"/><text x="130" y="315" text-anchor="middle" font-weight="bold">Home gateway</text><text x="130" y="332" text-anchor="middle" font-size="11">in tests: simulator.js +</text><text x="130" y="345" text-anchor="middle" font-size="11">smart-devices container</text>
+</g>
+<!-- Broker -->
+<rect x="310" y="265" width="170" height="110" rx="10" fill="#e3f2fd" stroke="#1565c0" stroke-width="2"/>
+<text x="395" y="300" text-anchor="middle" font-size="17" font-weight="bold" fill="#0d47a1">Mosquitto</text>
+<text x="395" y="322" text-anchor="middle" font-size="13" fill="#263238">MQTT broker :1883</text>
+<text x="395" y="342" text-anchor="middle" font-size="12" fill="#263238">password auth, QoS 1</text>
+<!-- Ingest -->
+<rect x="550" y="265" width="190" height="110" rx="10" fill="#fff3e0" stroke="#ef6c00" stroke-width="2"/>
+<text x="645" y="297" text-anchor="middle" font-size="17" font-weight="bold" fill="#e65100">Ingest service</text>
+<text x="645" y="318" text-anchor="middle" font-size="13" fill="#263238">Node.js (ingest.js)</text>
+<text x="645" y="337" text-anchor="middle" font-size="12" fill="#263238">validate · alerts · automation</text>
+<text x="645" y="354" text-anchor="middle" font-size="12" fill="#263238">batch insertMany</text>
+<!-- Replica set -->
+<rect x="820" y="200" width="360" height="240" rx="12" fill="#e8f5e9" stroke="#2e7d32" stroke-width="2"/>
+<text x="1000" y="228" text-anchor="middle" font-size="18" font-weight="bold" fill="#1b5e20">MongoDB 7 replica set "rs0"</text>
+<rect x="845" y="245" width="310" height="44" rx="6" fill="#a5d6a7" stroke="#2e7d32"/>
+<text x="1000" y="265" text-anchor="middle" font-size="14" font-weight="bold">mongo1:27017 — PRIMARY (priority 2)</text><text x="1000" y="282" text-anchor="middle" font-size="12">accepts all writes</text>
+<rect x="845" y="305" width="148" height="44" rx="6" fill="#fff" stroke="#2e7d32"/><text x="919" y="325" text-anchor="middle" font-size="13" font-weight="bold">mongo2:27018</text><text x="919" y="341" text-anchor="middle" font-size="12">SECONDARY</text>
+<rect x="1007" y="305" width="148" height="44" rx="6" fill="#fff" stroke="#2e7d32"/><text x="1081" y="325" text-anchor="middle" font-size="13" font-weight="bold">mongo3:27019</text><text x="1081" y="341" text-anchor="middle" font-size="12">SECONDARY</text>
+<path d="M919 289 L919 305" stroke="#2e7d32" stroke-width="2" marker-end="url(#a)"/>
+<path d="M1081 289 L1081 305" stroke="#2e7d32" stroke-width="2" marker-end="url(#a)"/>
+<text x="1000" y="375" text-anchor="middle" font-size="12" fill="#263238">oplog replication · keyfile auth · RBAC</text>
+<text x="1000" y="393" text-anchor="middle" font-size="12" fill="#263238">w: majority (2 of 3) · automatic election</text>
+<text x="1000" y="418" text-anchor="middle" font-size="12" fill="#263238">homes · devices · sensor_events (time-series) · alerts</text>
+<!-- API -->
+<rect x="820" y="490" width="360" height="100" rx="10" fill="#ede7f6" stroke="#5e35b1" stroke-width="2"/>
+<text x="1000" y="520" text-anchor="middle" font-size="17" font-weight="bold" fill="#4527a0">REST API — Express :4000</text>
+<text x="1000" y="542" text-anchor="middle" font-size="13" fill="#263238">/api/v1 · 10 endpoints · x-api-key</text>
+<text x="1000" y="562" text-anchor="middle" font-size="13" fill="#263238">door test · OpenAPI 3 docs at /docs</text>
+<!-- Clients -->
+<rect x="480" y="505" width="220" height="70" rx="10" fill="#fafafa" stroke="#607d8b" stroke-width="2"/>
+<text x="590" y="535" text-anchor="middle" font-size="16" font-weight="bold" fill="#37474f">Apps / staff / analysts</text>
+<text x="590" y="556" text-anchor="middle" font-size="12" fill="#263238">(future customer front end)</text>
+<!-- Existing -->
+<rect x="310" y="40" width="430" height="110" rx="10" fill="#eceff1" stroke="#78909c" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="525" y="68" text-anchor="middle" font-size="16" font-weight="bold" fill="#37474f">Existing relational systems (unchanged)</text>
+<text x="525" y="93" text-anchor="middle" font-size="13" fill="#263238">ERP · CRM · Financial · Order Processing/Sales · Logistics</text>
+<text x="525" y="118" text-anchor="middle" font-size="12" fill="#263238">linked by customerRef — no personal data copied</text>
+<path d="M740 95 L1000 95 L1000 200" fill="none" stroke="#78909c" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<!-- flows -->
+<path d="M220 320 L310 320" stroke="#37474f" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="265" y="300" text-anchor="middle" font-size="11" fill="#37474f">publish</text>
+<text x="395" y="395" text-anchor="middle" font-size="12" fill="#37474f">topic: iothings/&lt;home&gt;/&lt;device&gt;/state</text>
+<path d="M480 320 L550 320" stroke="#37474f" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="515" y="310" text-anchor="middle" font-size="11" fill="#37474f">subscribe</text>
+<path d="M740 310 L845 270" stroke="#37474f" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="790" y="280" text-anchor="middle" font-size="11" fill="#37474f">write</text>
+<path d="M1000 490 L1000 440" stroke="#37474f" stroke-width="2.5" marker-end="url(#a)" marker-start="url(#a)"/>
+<text x="1040" y="470" text-anchor="middle" font-size="11" fill="#37474f">read / write</text>
+<path d="M700 540 L820 540" stroke="#37474f" stroke-width="2.5" marker-end="url(#a)" marker-start="url(#a)"/>
+<text x="760" y="530" text-anchor="middle" font-size="11" fill="#37474f">HTTP/JSON</text>
+<path d="M620 375 L620 450 L130 450 L130 350" fill="none" stroke="#c62828" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#r)"/>
+<text x="375" y="470" text-anchor="middle" font-size="12" fill="#c62828">via broker: alerts → iothings/&lt;home&gt;/notifications</text><text x="375" y="487" text-anchor="middle" font-size="12" fill="#c62828">door opened → light "on" command → iothings/&lt;home&gt;/&lt;light&gt;/command</text>
+</svg></body></html>

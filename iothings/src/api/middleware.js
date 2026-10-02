@@ -67,9 +67,3 @@ export function dateRange(query) {
   if (from >= to) throw new HttpError(400, 'from must be before to');
   return { from, to };
 }
-
-// Only allow the listed fields through from a request body.
-export function pick(body, fields) {
-  if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new HttpError(400, 'body must be a JSON object');
-  return Object.fromEntries(fields.filter((f) => body[f] !== undefined).map((f) => [f, body[f]]));
-}

@@ -19,6 +19,14 @@ export const TOPIC_PREFIX = 'iothings';
 // iothings/<homeId>/<deviceId>/state
 export const stateTopic = (homeId, deviceId) => `${TOPIC_PREFIX}/${homeId}/${deviceId}/state`;
 export const notificationTopic = (homeId) => `${TOPIC_PREFIX}/${homeId}/notifications`;
+// iothings/<homeId>/<deviceId>/command - instructions sent to an actuator (e.g. a light)
+export const commandTopic = (homeId, deviceId) => `${TOPIC_PREFIX}/${homeId}/${deviceId}/command`;
+
+export function parseCommandTopic(topic) {
+  const parts = topic.split('/');
+  if (parts.length !== 4 || parts[0] !== TOPIC_PREFIX || parts[3] !== 'command') return null;
+  return { homeId: parts[1], deviceId: parts[2] };
+}
 
 export function parseStateTopic(topic) {
   const parts = topic.split('/');

@@ -2,7 +2,7 @@
 
 A NoSQL sensor-activation data store for **IoThings Home Automation Solutions**, a UK start-up that installs smart home sensors (door locks, lights, blinds, thermostats, smoke alarms and more).
 
-Each sensor reports its activity over **MQTT**. A **Node.js** service validates the messages and stores them in a **three-node MongoDB replica set**. A **REST API** gives access to the stored data and processes it into useful feedback: device usage, energy use, daily routines, comfort recommendations and safety alerts.
+Each sensor reports its activity over **MQTT**. A **Node.js** service validates the messages and stores them in a **three-node MongoDB replica set**. A **REST API** gives access to the stored data and processes it into useful feedback such as predicted daily routines and safety alerts. When a person opens a door, the system raises an alert and switches the room's light on automatically.
 
 ---
 
@@ -38,8 +38,9 @@ Each sensor reports its activity over **MQTT**. A **Node.js** service validates 
 | Security | Keyfile authentication between members. Role-based users: admin, ingest, api and a read-only analyst. MQTT requires a password. The API requires an API key. |
 | Schema | JSON-schema validation, unique and compound indexes, a **time-series** collection for events, and a 2-year TTL for UK GDPR. |
 | MQTT ingest | Checks each message against the device registry and payload rules, raises safety alerts, publishes notifications and writes events in batches. |
-| REST API | Create/read/update/delete for homes, devices, events and alerts, plus analytics endpoints. Swagger/OpenAPI documentation is at `/docs`. |
-| Analytics | Device usage and hours on, smart-plug energy (kWh), activity by hour, predicted daily routine, climate per room, recommendations, and an estate-wide overview. |
+| Door & light | A door opening raises an alert and switches the room's light on automatically. Testable from Swagger. |
+| REST API | 10 endpoints: the door test, room status, alerts, homes, devices, events, routine prediction and cluster status. Swagger/OpenAPI documentation is at `/docs`. |
+| Analytics | Predicted daily routine (median wake-up, leave and return times) from 28 days of sensor data. |
 | Dataset | A reproducible synthetic dataset: 20 homes, 480 devices and about 290k events over 30 days. There is also a live MQTT simulator. |
 | Demos | Scripts for create/read/update/delete, access control and failover, with output suitable for report screenshots. |
 
@@ -74,6 +75,7 @@ Every component runs in Docker and is defined in `docker-compose.yml`:
 | `mosquitto` | mosquitto | 1883 | MQTT broker |
 | `ingest` | iothings-ingest | none | Moves data from MQTT into MongoDB |
 | `api` | iothings-api | 4000 | REST API and Swagger UI |
+| `smart-devices` | iothings-smart-devices | none | Plays the homes' smart lights: obeys the automation's MQTT commands (switch on) and reports the new state |
 | `simulator` | iothings-simulator | none | Sensor gateway simulator (the `sim` profile; only runs on demand) |
 
 ---
@@ -97,9 +99,11 @@ Every component runs in Docker and is defined in `docker-compose.yml`:
    - checks the **safety rules**:
      - smoke leads to a *critical* alert
      - a door unlocked or opened during the owner's night hours (UK time) leads to a *warning*
+     - any other door opening leads to an *info* `door_opened` alert (live MQTT messages only, so the seeded dataset is unchanged)
      - a temperature of 35 °C or more, or 5 °C or less, leads to a *warning*
 
      Each alert is saved in `alerts` and published to `iothings/<homeId>/notifications`.
+   - runs the **automation rules** (`src/automations.js`): when a room's door sensor reports `open`, every active light in that room that is not already on gets the MQTT command `{"state":"on","value":100}` on `iothings/<homeId>/<deviceId>/command`. The light obeys and reports its new state, which is stored like any other event.
    - buffers events and writes them with `insertMany` every **1 s or 500 events**, whichever comes first. It then updates each device's `lastState` and `lastSeen`.
 4. **MongoDB** saves the batch on the primary and copies it to the secondaries. A write is only acknowledged once a **majority (2 of 3)** of members have it, so acknowledged data survives the loss of any one server.
 5. **The REST API** reads and processes the data with aggregation pipelines, for example grouping motion events by hour to find when a home is occupied.
@@ -171,7 +175,7 @@ docker compose logs -f ingest         # follow the ingest log (statistics every 
 docker compose logs -f api            # follow the API log
 
 docker compose stop                   # stop containers, keep everything
-docker compose up -d mongo1 mongo2 mongo3 mosquitto ingest api   # start again
+docker compose up -d mongo1 mongo2 mongo3 mosquitto ingest smart-devices api   # start again
 
 docker compose down                   # remove containers; data stays in Docker volumes
 docker compose down -v                # remove containers AND all database data
@@ -218,80 +222,76 @@ grep API_KEY .env
 2. Click **Authorize**, paste the API key, then click **Authorize** again and **Close**.
 3. Expand an endpoint, click **Try it out**, fill in the parameters and click **Execute**.
 
+#### Testing the door → alert → light feature (the "Door & light" group, top of the page)
+
+**When a person opens a door, the door sensor raises an alert and the room's light switches on automatically.** Test it in this order:
+
+| # | Endpoint | Input | Expect |
+|---|---|---|---|
+| 1 | `POST /api/v1/simulate/door` | `{"homeId":"H001"}` | `"alertRaised": true`, `"lightTurnedOn": true`, the alert (`door_opened`, "hallway door opened") and the light `before: off`, `after: on` |
+| 2 | `GET /api/v1/rooms/{homeId}/{room}` | homeId `H001`, room `hallway` | Door `closed`, light `on` at brightness 100, and the latest door alerts |
+| 3 | `GET /api/v1/alerts` | kind `door_opened` | Every door-opened alert, newest first |
+
+Notes:
+- Any home from H001 to H020 works. Every hallway has a door sensor and a light.
+- During the owner's night hours (default 23:00 to 06:00, UK time) the alert is an `intrusion` **warning** instead of the `door_opened` **info** alert. The light still switches on.
+- To test another room, register a door sensor there first: `scripts/mongosh.sh api`, then `db.devices.insertOne({deviceId:"H001-bedroom-door-contact", homeId:"H001", type:"door_contact", room:"bedroom", status:"active", installedAt:new Date()})`. Then call step 1 with `{"homeId":"H001","room":"bedroom"}`.
+- Needs the `ingest` and `smart-devices` containers running. If either flag comes back `false`, the `steps` list in the response says which part didn't react.
+
 ### 7.3 curl examples
 
 ```bash
 K=$(grep ^API_KEY .env | cut -d= -f2)
 H="x-api-key: $K"
 
-# Homes
+# The door feature: a person opens the door -> alert + light on
+curl -H "$H" -H "content-type: application/json" -d '{"homeId":"H001"}' localhost:4000/api/v1/simulate/door
+curl -H "$H" localhost:4000/api/v1/rooms/H001/hallway
+curl -H "$H" "localhost:4000/api/v1/alerts?homeId=H001&kind=door_opened"
+
+# Accessing the stored data
 curl -H "$H" localhost:4000/api/v1/homes
 curl -H "$H" localhost:4000/api/v1/homes/H001                    # the home plus all its devices
+curl -H "$H" "localhost:4000/api/v1/devices?homeId=H001&room=hallway"
+curl -H "$H" "localhost:4000/api/v1/events?homeId=H001&type=door_contact&limit=5"   # default window: last 7 days
 
-# Devices
-curl -H "$H" "localhost:4000/api/v1/devices?homeId=H001&type=light"
-curl -H "$H" localhost:4000/api/v1/devices/H001-hallway-door-lock
-
-# Events (homeId or deviceId required; default window is the last 7 days)
-curl -H "$H" "localhost:4000/api/v1/events?homeId=H001&type=door_lock&limit=5"
-curl -H "$H" "localhost:4000/api/v1/events?deviceId=H001-kitchen-temperature&from=2026-09-20&to=2026-09-21"
-
-# Alerts
-curl -H "$H" "localhost:4000/api/v1/alerts?severity=critical&acknowledged=false"
-curl -H "$H" -X POST localhost:4000/api/v1/alerts/<alertId>/acknowledge
-
-# Analytics
-curl -H "$H" localhost:4000/api/v1/analytics/overview
-curl -H "$H" localhost:4000/api/v1/analytics/homes/H001/usage
-curl -H "$H" localhost:4000/api/v1/analytics/homes/H001/activity-by-hour
+# Processing the stored data
 curl -H "$H" localhost:4000/api/v1/analytics/homes/H005/routine
-curl -H "$H" localhost:4000/api/v1/analytics/homes/H001/climate
-curl -H "$H" localhost:4000/api/v1/analytics/homes/H003/recommendations
 
-# Cluster
+# The cluster
 curl -H "$H" localhost:4000/api/v1/cluster/status
 ```
 
-Create, update and delete (a full lifecycle):
-
-```bash
-J="content-type: application/json"
-curl -H "$H" -H "$J" -d '{"homeId":"H950","customerRef":"CRM-99","address":{"city":"Leeds","postcode":"LS1 1AA"},"rooms":["kitchen"]}' localhost:4000/api/v1/homes
-curl -H "$H" -H "$J" -d '{"deviceId":"H950-kitchen-light","homeId":"H950","type":"light","room":"kitchen"}' localhost:4000/api/v1/devices
-curl -H "$H" -H "$J" -d '{"deviceId":"H950-kitchen-light","state":"on","value":80}' localhost:4000/api/v1/events
-curl -H "$H" -H "$J" -X PATCH -d '{"preferences":{"targetTemperature":20}}' localhost:4000/api/v1/homes/H950
-curl -H "$H" -X DELETE localhost:4000/api/v1/homes/H950     # removes the home, its devices, events and alerts
-```
+Or run `scripts/api-walkthrough.sh`, which calls every endpoint in a sensible order and explains each step.
 
 ### 7.4 Endpoint reference
 
+The API has 10 endpoints in three groups. All data changes come from the sensors over MQTT, not from the API; create, update and delete on the database itself are demonstrated in `mongo/demo-queries.js` (section 10).
+
 | Method | Path | Description |
 |---|---|---|
-| GET | `/health` | API and database status, and the current primary |
+| **Door & light** | | |
+| POST | `/api/v1/simulate/door` | A person opens a door: returns the alert raised and the light switching on |
+| GET | `/api/v1/rooms/{homeId}/{room}` | A room's door state, light state and latest door alerts |
+| GET | `/api/v1/alerts` | List alerts (filters: `homeId`, `kind` such as `door_opened`, `severity`, `acknowledged`, `limit`) |
+| **Stored data** | | |
+| GET | `/api/v1/homes` | List homes (filters: `city`, `customerRef`) |
+| GET | `/api/v1/homes/{homeId}` | One home with all its devices |
+| GET | `/api/v1/devices` | List devices (filters: `homeId`, `type`, `room`, `status`) |
+| GET | `/api/v1/events` | Sensor readings (`homeId` or `deviceId` required; `type`, `room`, `from`, `to`, `limit`) |
+| GET | `/api/v1/analytics/homes/{homeId}/routine` | Predicted wake-up, leave and return times (median of 28 days) |
+| **Operations** | | |
+| GET | `/health` | API and database status, and the current primary (no key needed) |
 | GET | `/api/v1/cluster/status` | Each replica set member's state, health and replication time |
-| GET, POST | `/api/v1/homes` | List homes (filters: `city`, `customerRef`) or create a home |
-| GET, PATCH, DELETE | `/api/v1/homes/{homeId}` | Get a home with its devices, update it, or delete it together with all of its data |
-| GET, POST | `/api/v1/devices` | List devices (filters: `homeId`, `type`, `room`, `status`) or register a device |
-| GET, PATCH, DELETE | `/api/v1/devices/{deviceId}` | Get a device with its latest state, update it or delete it |
-| GET, POST | `/api/v1/events` | Query events (`homeId`, `deviceId`, `type`, `room`, `from`, `to`, `limit`), or submit an event over HTTP |
-| GET | `/api/v1/alerts` | List alerts (filters: `homeId`, `kind`, `severity`, `acknowledged`) |
-| POST | `/api/v1/alerts/{id}/acknowledge` | Acknowledge an alert |
-| GET | `/api/v1/analytics/overview` | Events per day and per type, device status and alert totals |
-| GET | `/api/v1/analytics/homes/{id}/usage` | Activations, hours on and kWh for each device |
-| GET | `/api/v1/analytics/homes/{id}/activity-by-hour` | Motion by hour of day and room (occupancy pattern) |
-| GET | `/api/v1/analytics/homes/{id}/routine` | Median wake-up, leave and return times, for weekdays and weekends |
-| GET | `/api/v1/analytics/homes/{id}/climate` | Daily average, minimum and maximum temperature and humidity per room |
-| GET | `/api/v1/analytics/homes/{id}/recommendations` | Energy, comfort and safety tips |
 
 ### 7.5 Status codes
 
 | Code | Meaning |
 |---|---|
-| 200 / 201 / 204 | Success, created, or deleted |
-| 400 | Invalid input, or the document failed MongoDB schema validation (details are included) |
+| 200 | Success |
+| 400 | Invalid input, e.g. `/events` without `homeId` or `deviceId`, or a bad date |
 | 401 | Missing or wrong `x-api-key` |
-| 404 | The resource was not found |
-| 409 | Duplicate `homeId` or `deviceId` |
+| 404 | Not found, e.g. an unknown home, or a room without a door sensor |
 | 503 | The database is unavailable (from `/health`) |
 
 ---
@@ -334,6 +334,7 @@ docker exec mosquitto mosquitto_pub -u "$MQTT_GATEWAY_USER" -P "$MQTT_GATEWAY_PA
 ### 8.3 Message format
 
 - Topic: `iothings/<homeId>/<deviceId>/state`
+- Commands to devices (sent by the automation rules): `iothings/<homeId>/<deviceId>/command`, e.g. `{"state":"on","value":100,"reason":"hallway door opened"}`
 - Payload: a JSON object with a `state` or a `value` (or both), plus optional `ts` (ISO-8601) and `battery` (0 to 100)
 
 | Device type | `state` values | `value` (unit, range) |
@@ -410,8 +411,10 @@ These scripts give clear output that you can screenshot for the report.
 | Create/read/update/delete, schema validation, `$lookup`, aggregation, `explain()`, GDPR delete | `scripts/mongosh.sh api mongo/demo-queries.js` |
 | Role-based access: the analyst can read but not delete | `scripts/mongosh.sh analyst mongo/demo-rbac.js` |
 | **Failover**: kill the primary, election, writes still succeed, the old primary rejoins | `scripts/failover-demo.sh` |
+| **Automation**: open a door and the room's light switches on | `docker compose --profile sim run --rm simulator node src/simulator.js --door H001` (add `--room bedroom` etc. for any room with a door sensor) |
 | MQTT end to end: smoke, then alert, then notification | `docker compose --profile sim run --rm simulator node src/simulator.js --smoke H007` |
 | MQTT validation | `... simulator.js --invalid`, then `docker compose logs ingest` |
+| **API end to end**: one story using every endpoint group, explained step by step | `scripts/api-walkthrough.sh` (add `--fast` to skip pauses) |
 | API documentation | http://localhost:4000/docs |
 | Live ingest statistics | `docker compose logs -f ingest` while the simulator runs |
 | Ingest throughput (load test) | `docker compose --profile sim run --rm simulator node scripts/load-test.js --messages 100000` |
@@ -424,7 +427,7 @@ Example failover output:
 3. Waiting for the remaining members to elect a new primary
     new primary mongo2:27018 elected after 10s
 4. Writes still succeed with one node down (w: majority = 2 of 3)
-    POST /events -> HTTP 201
+    door opened -> alert saved: true, light switched on: true
 5. Restarting mongo1 - it rejoins as SECONDARY and catches up from the oplog
 6. mongo1 has priority 2, so once it has caught up it is re-elected primary
 ```
@@ -486,7 +489,7 @@ Example documents:
 | MQTT | `allow_anonymous false`, with a password file (hashed) for the `ingest` and `gateway` users |
 | API | `x-api-key` header compared in constant time. Request bodies are limited to 100 KB. Clients can only write listed fields. Internal errors are hidden from clients. |
 | Data quality | Schema validation in MongoDB, plus payload validation in the ingest service and API |
-| UK GDPR | Events expire after 2 years (TTL). `DELETE /homes/{id}` erases all of a home's data. Customer personal details stay in the CRM. |
+| UK GDPR | Events expire after 2 years (TTL). A home's data can be erased across all collections (shown in `demo-queries.js`). Customer personal details stay in the CRM. |
 | Secrets | `.env`, the keyfile and the MQTT password file are generated locally and listed in `.gitignore` |
 
 | MongoDB user | Auth DB | Roles | Used by |
@@ -602,7 +605,7 @@ The unit tests (`test/devices.test.js`, using `node:test`) cover:
 | API returns `401` | Send the header `x-api-key: <API_KEY from .env>`. |
 | `/health` returns `503` | The replica set has no primary. Check `docker compose ps`; at least 2 of the 3 mongo containers must be running. |
 | Seed fails with `EACCES` writing to `data/` | Run it with `--user "$(id -u):$(id -g)"` as shown above. |
-| Ingest log shows `rejected message from unregistered device` | Register the device first (`POST /api/v1/devices`) or run the seed script. |
+| Ingest log shows `rejected message from unregistered device` | Register the device in the `devices` collection first (see section 7.2), or run the seed script. |
 | `getaddrinfo ENOTFOUND mongo1` when running from the host | Add `127.0.0.1 mongo1 mongo2 mongo3` to `/etc/hosts`, or use `directConnection=true` (section 9). |
 | Start completely from scratch | `docker compose down -v && rm .env docker/mongo/keyfile docker/mosquitto/passwd && ./scripts/setup.sh` |
 
@@ -653,7 +656,7 @@ iothings/
 
 ## 19. Future work
 
-- **Customer front end:** a web or mobile dashboard that visualises the sensor data and recommendations through this API.
+- **Customer front end:** a web or mobile dashboard that visualises the sensor data, routines and alerts through this API.
 - **Transport security:** TLS for MongoDB, MQTT (port 8883) and the API (HTTPS).
 - **Encryption at rest:** encrypt stored data, and use client-side field-level encryption for sensitive fields.
 - **Per-customer access:** OAuth2 or JWT, so each customer can only see their own home.

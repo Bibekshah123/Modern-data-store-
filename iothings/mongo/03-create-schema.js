@@ -90,7 +90,7 @@ ensureCollection('alerts', {
       properties: {
         homeId: { bsonType: 'string' },
         deviceId: { bsonType: 'string' },
-        kind: { enum: ['smoke', 'intrusion', 'door_unlocked', 'temperature', 'device_offline'] },
+        kind: { enum: ['smoke', 'intrusion', 'door_unlocked', 'door_opened', 'temperature', 'device_offline'] },
         severity: { enum: ['info', 'warning', 'critical'] },
         message: { bsonType: 'string' },
         ts: { bsonType: 'date' },

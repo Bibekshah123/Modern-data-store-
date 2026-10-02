@@ -48,3 +48,30 @@ test('generated dataset is deterministic and valid', () => {
   const byId = new Map(devices.map((d) => [d.deviceId, d]));
   for (const { deviceId, payload } of a) assert.equal(validatePayload(byId.get(deviceId).type, payload), null);
 });
+
+test('opening a door switches on the lights in that room', async () => {
+  const { doorOpensLights } = await import('../src/automations.js');
+  const door = { deviceId: 'H001-hallway-door-contact', homeId: 'H001', type: 'door_contact', room: 'hallway' };
+  const room = [
+    door,
+    { deviceId: 'H001-hallway-light', homeId: 'H001', type: 'light', room: 'hallway', status: 'active', lastState: { state: 'off' } },
+    { deviceId: 'H001-hallway-motion', homeId: 'H001', type: 'motion', room: 'hallway', status: 'active' },
+  ];
+  const cmds = doorOpensLights(toEvent(door, { state: 'open' }), room);
+  assert.deepEqual(cmds.map((c) => [c.deviceId, c.payload.state]), [['H001-hallway-light', 'on']]);
+  assert.deepEqual(doorOpensLights(toEvent(door, { state: 'closed' }), room), []);
+  room[1].lastState.state = 'on'; // already on: nothing to do
+  assert.deepEqual(doorOpensLights(toEvent(door, { state: 'open' }), room), []);
+});
+
+test('opening a door raises a door_opened alert (an intrusion warning at night)', async () => {
+  const { doorOpenedAlert } = await import('../src/automations.js');
+  const door = { deviceId: 'H001-hallway-door-contact', homeId: 'H001', type: 'door_contact', room: 'hallway' };
+  const opened = toEvent(door, { state: 'open', ts: '2026-07-01T12:00:00Z' });
+  // what the ingest service does: the night rule first, then the door_opened alert
+  const alertFor = (e) => detectAlert(e, {}) ?? doorOpenedAlert(e);
+  assert.equal(alertFor(opened).kind, 'door_opened');
+  assert.equal(alertFor(opened).message, 'hallway door opened');
+  assert.equal(alertFor(toEvent(door, { state: 'closed' })), null);
+  assert.equal(alertFor(toEvent(door, { state: 'open', ts: '2026-01-10T02:00:00Z' })).kind, 'intrusion');
+});

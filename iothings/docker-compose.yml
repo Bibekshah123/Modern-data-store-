@@ -94,6 +94,18 @@ services:
       - ./data:/app/data
     ports: ["${API_PORT:-4000}:4000"]
 
+  # Plays the homes' smart lights: obeys MQTT commands sent by the automation rules
+  smart-devices:
+    build: .
+    container_name: iothings-smart-devices
+    restart: unless-stopped
+    networks: [iot]
+    env_file: .env
+    environment:
+      MONGO_URI: ${MONGO_URI_API}
+    command: ["node", "src/simulator.js", "--lights"]
+    depends_on: [mosquitto]
+
   # Not started by default: `docker compose --profile sim up simulator`
   simulator:
     build: .
